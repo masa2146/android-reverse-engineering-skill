@@ -30,7 +30,11 @@ if grep -q 'global-metadata\.dat' <<<"$listing" \
    && grep -qi 'libil2cpp\.so' <<<"$listing"; then
   echo il2cpp; exit 0
 fi
-if grep -Eq 'assets/bin/Data/Managed/.*\.dll' <<<"$listing"; then
+# Mono: a real managed assembly is a DIRECT child of Managed/ (e.g.
+# Assembly-CSharp.dll). Anchor to end-of-line so Managed/Resources/*-resources.dat
+# resource stubs (IL2CPP builds) don't false-match as mono. The [^/]+ forbids
+# matching into the Resources/ subdir.
+if grep -Eq 'assets/bin/Data/Managed/[^/]+\.dll$' <<<"$listing"; then
   echo mono; exit 0
 fi
 echo none

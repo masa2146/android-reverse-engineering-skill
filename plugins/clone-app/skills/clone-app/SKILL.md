@@ -66,6 +66,56 @@ RE="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/resolve-re-scripts.sh 
 - Check your own available-skills list for `android-reverse-engineering` →
   is the RE **skill** registered?
 
+### Phase 2a — Unity tool dependency gate (run before dispatch)
+
+Classify the build and confirm the Unity extraction tools are actually present, so
+the cost of a missing tool is surfaced **before** the RE subagent runs — not buried
+in a silent `limited:` digest afterward.
+
+```bash
+UNITY="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/detect-unity.sh "$APK")"   # il2cpp | mono | none
+has_dotnet() { command -v dotnet >/dev/null 2>&1; }
+has_il2cpp() { command -v "${IL2CPP_INSPECTOR_CLI:-Il2CppInspector}" >/dev/null 2>&1; }
+has_ilspy()  { command -v ilspycmd >/dev/null 2>&1; }
+has_ar()     { command -v "${ASSETRIPPER_CLI:-AssetRipper}" >/dev/null 2>&1; }
+```
+
+If `UNITY` is `none`, set `UNITY_TOOLS=n/a` and skip the rest of this gate.
+Otherwise the required tools are:
+
+| Build | Type-model tooling | Asset tooling |
+|---|---|---|
+| `il2cpp` | `.NET 10` runtime (`dotnet`) **+** `Il2CppInspector` (Il2CppInspectorRedux, framework-dependent → needs dotnet) | `AssetRipper` |
+| `mono`   | `.NET` runtime (`dotnet`) **+** `ilspycmd` | `AssetRipper` |
+
+> **Reality check for `il2cpp`:** C# method bodies are compiled to native ARM and
+> are unrecoverable **regardless of tools**. The tool only recovers class/method/
+> field *signatures*. State this so the user knows what is — and isn't — at stake.
+
+**If any required tool is missing → PAUSE and ask the user** (do not degrade
+silently). Tell them, concretely:
+- the build type and that `il2cpp` method bodies are unrecoverable anyway (only
+  type signatures + assets are at risk);
+- what each missing tool loses (`il2cpp` dump absent → no class/method names, data
+  model, or netcode types in `unity-digest.md`; `AssetRipper` absent → no extracted
+  sprites/audio/scenes, screenshots only);
+- the exact install commands + cost:
+  - `brew install --cask dotnet-sdk` — .NET 10, ~1 GB, **sudo** (user-run via `!`)
+  - Il2CppInspectorRedux: download `Il2CppInspectorRedux.CLI-osx-arm64.zip` from
+    https://github.com/LukeFZ/Il2CppInspectorRedux/releases, unzip, export
+    `IL2CPP_INSPECTOR_CLI=<path>` (framework-dependent → needs dotnet above)
+  - `brew install ilspycmd` (mono decompile)
+  - AssetRipper: download from https://github.com/AssetRipper/AssetRipper/releases,
+    export `ASSETRIPPER_CLI=<path>` — GUI/web-server build; set `UNITY_ASSETS_MANUAL=1`
+    to defer asset extraction (see `unity-re-guide.md`)
+- then ask: **install now, or proceed limited?**
+
+Set `UNITY_TOOLS=full` if everything the user wants is present (or they just
+installed it), else `UNITY_TOOLS=limited:<reason>` (e.g.
+`limited:unity-no-dotnet`, `limited:unity-no-assetripper`). Pass `$UNITY` and
+`$UNITY_TOOLS` to the Phase 2b subagent. Proceeding `limited:` is only valid once
+the user has acknowledged the cost.
+
 Pick the branch:
 
 | RE skill registered | RE scripts on disk (`RC`) | Branch |
@@ -78,8 +128,8 @@ Pick the branch:
 
 Dispatch one subagent (Agent tool, `general-purpose` type — it can both invoke
 skills and run bash). Pass it: `$PKG`, `$APK`, `$WORK`, the chosen **branch**,
-the resolved `$RE` scripts dir, and the path to `re-digest-contract.md`. Its
-instructions:
+the resolved `$RE` scripts dir, the Phase 2a gate's `$UNITY` and `$UNITY_TOOLS`,
+and the path to `re-digest-contract.md`. Its instructions:
 
 Tell the subagent its clone-app scripts dir is
 `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/` (pass it explicitly as `$CA`).
@@ -95,8 +145,9 @@ Tell the subagent its clone-app scripts dir is
      (add `--deobf` if obfuscation is heavy), `bash "$RE/recover-kotlin-names.sh"
      "$WORK/output/sources" "$WORK/output/names/"` if Kotlin, then
      `bash "$RE/find-api-calls.sh" "$WORK/output/sources"`.
-2. **Detect Unity & capture design.** After decompile:
-   - `UNITY="$(bash "$CA/detect-unity.sh" "$APK")"` — prints exactly `il2cpp|mono|none`.
+2. **Capture design (Unity-aware).** `$UNITY` (`il2cpp|mono|none`) and
+   `$UNITY_TOOLS` (`full` | `limited:<reason>`) were resolved by the Phase 2a gate
+   — use them, do not re-run `detect-unity.sh`. After decompile:
    - **Non-Unity (`none`):** run
      `python3 "$CA/extract-design.py" "$WORK/output" --package "$PKG" --out "$WORK/design-tokens.json" --digest "$WORK/design-digest.md"`
      per `design-capture-guide.md`.
@@ -115,8 +166,11 @@ Tell the subagent its clone-app scripts dir is
      `$WORK/game-assets/` into `$WORK/game-assets/manifest.json` (a JSON list
      of `{"path": ..., "type": ...}` entries for every extracted file); write
      `$WORK/unity-digest.md` per `unity-re-guide.md`.
-   - If a Unity tool exits 3 (missing), continue with a partial digest and set
-     `RE Method: limited: unity-no-tools`.
+   - If `$UNITY_TOOLS` is `limited:<reason>`, **skip the missing tool's step**
+     (the user acknowledged the cost at the Phase 2a gate), write whatever is
+     recoverable, and set `RE Method: $UNITY_TOOLS` (e.g.
+     `limited:unity-no-dotnet`, `limited:unity-no-assetripper`). If
+     `$UNITY_TOOLS` is `full`, run every tool above.
 3. **Framework guard:** if the fingerprint is Flutter / React Native / Cordova
    / Xamarin, Java decompile is shallow — produce a partial digest, set
    `RE Method: limited: <framework>`, payloads may be empty.
@@ -293,7 +347,7 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | Heavy obfuscation | add uncertainty band, note in report |
 | writing-plans unavailable | write the plan as Markdown manually |
 | Unity build detected | run IL2CPP/Mono branch + AssetRipper |
-| Unity tool missing | continue, partial digest, RE Method `limited: unity-no-tools` |
+| Unity tool missing | Phase 2a gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
 | No screenshots on Play | note it, rely on design-tokens + web image search |
 | Phase 7 = No | stop after feasibility report; skip the fidelity pass |
 | Fidelity subagent fails | retry once, then continue with partial artifacts and note the gap |
