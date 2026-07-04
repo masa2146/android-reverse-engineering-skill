@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .gstack/
+
+# clone-app / market-research working dirs (APKs, decompiled sources, reports)
+# never commit — large, regenerable, may contain third-party code/assets
+work/
