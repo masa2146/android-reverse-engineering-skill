@@ -66,7 +66,31 @@ RE="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/resolve-re-scripts.sh 
 - Check your own available-skills list for `android-reverse-engineering` →
   is the RE **skill** registered?
 
-### Phase 2a — Unity tool dependency gate (run before dispatch)
+### Phase 2b — Engine dispatch
+
+Classify the package by game engine and load **only** the matching module, so no
+engine's tooling docs bloat this orchestrator's context.
+
+```bash
+ENGINE="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/detect-engine.sh "$APK")"
+# → unity-il2cpp | unity-mono | unreal | godot | native | none
+```
+
+- `unity-il2cpp` / `unity-mono` → continue to the Unity tool dependency gate below.
+- `unreal` / `godot` → load that engine's guide under
+  `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/engines/` when its module lands
+  (not yet implemented); until then treat as `limited:<engine>-not-implemented`.
+- `native` → mechanics `not-recoverable`; generic resource listing only.
+- `none` → non-game app; use the standard non-Unity design-capture path.
+
+Whatever engine runs, its module fills the uniform contract in
+`${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/engines/module-contract.md`
+(`mechanics-digest.md`, `game-assets/` + `manifest.json`, `netcode-recon.md`, and a
+`coverage-report.md` produced by
+`python3 ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/gen-coverage-report.py <manifest.json> --out $WORK/coverage-report.md`).
+The downstream build spec reads `coverage-report.md` — never assume full coverage.
+
+### Phase 2c — Unity tool dependency gate (run after engine dispatch, before the RE subagent dispatch)
 
 Classify the build and confirm the Unity extraction tools are actually present, so
 the cost of a missing tool is surfaced **before** the RE subagent runs — not buried
@@ -113,7 +137,7 @@ silently). Tell them, concretely:
 Set `UNITY_TOOLS=full` if everything the user wants is present (or they just
 installed it), else `UNITY_TOOLS=limited:<reason>` (e.g.
 `limited:unity-no-dotnet`, `limited:unity-no-assetripper`). Pass `$UNITY` and
-`$UNITY_TOOLS` to the Phase 2b subagent. Proceeding `limited:` is only valid once
+`$UNITY_TOOLS` to the Phase 2d subagent. Proceeding `limited:` is only valid once
 the user has acknowledged the cost.
 
 Pick the branch:
@@ -124,11 +148,11 @@ Pick the branch:
 | no | 0 | **direct-scripts** |
 | no | 1 | **stop** — show the `/tmp/re-err` resolver error and halt |
 
-### Phase 2b — Dispatch the subagent
+### Phase 2d — Dispatch the subagent
 
 Dispatch one subagent (Agent tool, `general-purpose` type — it can both invoke
 skills and run bash). Pass it: `$PKG`, `$APK`, `$WORK`, the chosen **branch**,
-the resolved `$RE` scripts dir, the Phase 2a gate's `$UNITY` and `$UNITY_TOOLS`,
+the resolved `$RE` scripts dir, the Phase 2c gate's `$UNITY` and `$UNITY_TOOLS`,
 and the path to `re-digest-contract.md`. Its instructions:
 
 Tell the subagent its clone-app scripts dir is
@@ -146,7 +170,7 @@ Tell the subagent its clone-app scripts dir is
      "$WORK/output/sources" "$WORK/output/names/"` if Kotlin, then
      `bash "$RE/find-api-calls.sh" "$WORK/output/sources"`.
 2. **Capture design (Unity-aware).** `$UNITY` (`il2cpp|mono|none`) and
-   `$UNITY_TOOLS` (`full` | `limited:<reason>`) were resolved by the Phase 2a gate
+   `$UNITY_TOOLS` (`full` | `limited:<reason>`) were resolved by the Phase 2c gate
    — use them, do not re-run `detect-unity.sh`. After decompile:
    - **Non-Unity (`none`):** run
      `python3 "$CA/extract-design.py" "$WORK/output" --package "$PKG" --out "$WORK/design-tokens.json" --digest "$WORK/design-digest.md"`
@@ -167,7 +191,7 @@ Tell the subagent its clone-app scripts dir is
      of `{"path": ..., "type": ...}` entries for every extracted file); write
      `$WORK/unity-digest.md` per `unity-re-guide.md`.
    - If `$UNITY_TOOLS` is `limited:<reason>`, **skip the missing tool's step**
-     (the user acknowledged the cost at the Phase 2a gate), write whatever is
+     (the user acknowledged the cost at the Phase 2c gate), write whatever is
      recoverable, and set `RE Method: $UNITY_TOOLS` (e.g.
      `limited:unity-no-dotnet`, `limited:unity-no-assetripper`). If
      `$UNITY_TOOLS` is `full`, run every tool above.
@@ -188,7 +212,7 @@ If the subagent fails, retry once; if it still fails and the **direct-scripts**
 branch is available (i.e. the Phase 2a probe returned `RC == 0`), re-dispatch on
 that branch; otherwise stop and report.
 
-### Phase 2c — Consume
+### Phase 2e — Consume
 
 Read `$WORK/re-summary.txt` (the only RE text in this context). From it you have:
 framework, HTTP stack, host counts, endpoint count, key-flow names, secrets
@@ -347,7 +371,7 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | Heavy obfuscation | add uncertainty band, note in report |
 | writing-plans unavailable | write the plan as Markdown manually |
 | Unity build detected | run IL2CPP/Mono branch + AssetRipper |
-| Unity tool missing | Phase 2a gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
+| Unity tool missing | Phase 2c gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
 | No screenshots on Play | note it, rely on design-tokens + web image search |
 | Phase 7 = No | stop after feasibility report; skip the fidelity pass |
 | Fidelity subagent fails | retry once, then continue with partial artifacts and note the gap |

@@ -26,5 +26,9 @@ has "nav-graph.json"
 has "backend-recon.md"
 has "fidelity-report-"
 has "fidelity-pass-guide.md"
+has "detect-engine.sh"
+has "module-contract.md"
+has "coverage-report.md"
+has "gen-coverage-report.py"
 
 exit $fail
