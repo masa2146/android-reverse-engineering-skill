@@ -66,6 +66,30 @@ RE="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/resolve-re-scripts.sh 
 - Check your own available-skills list for `android-reverse-engineering` →
   is the RE **skill** registered?
 
+### Phase 2a — Engine dispatch (run before the tool gate)
+
+Classify the package by game engine and load **only** the matching module, so no
+engine's tooling docs bloat this orchestrator's context.
+
+```bash
+ENGINE="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/detect-engine.sh "$APK")"
+# → unity-il2cpp | unity-mono | unreal | godot | native | none
+```
+
+- `unity-il2cpp` / `unity-mono` → continue to the Unity tool dependency gate below.
+- `unreal` / `godot` → load that engine's guide under
+  `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/engines/` when its module lands
+  (not yet implemented); until then treat as `limited:<engine>-not-implemented`.
+- `native` → mechanics `not-recoverable`; generic resource listing only.
+- `none` → non-game app; use the standard non-Unity design-capture path.
+
+Whatever engine runs, its module fills the uniform contract in
+`${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/engines/module-contract.md`
+(`mechanics-digest.md`, `game-assets/` + `manifest.json`, `netcode-recon.md`, and a
+`coverage-report.md` produced by
+`python3 ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/gen-coverage-report.py <manifest.json> --out $WORK/coverage-report.md`).
+The downstream build spec reads `coverage-report.md` — never assume full coverage.
+
 ### Phase 2a — Unity tool dependency gate (run before dispatch)
 
 Classify the build and confirm the Unity extraction tools are actually present, so
