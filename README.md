@@ -1,228 +1,131 @@
-# Android Reverse Engineering & API Extraction — Claude Code skill
+# App Clone Pipeline — discover → analyze → build (Claude Code plugins)
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![GitHub stars](https://img.shields.io/github/stars/SimoneAvogadro/android-reverse-engineering-skill?style=social)](https://github.com/SimoneAvogadro/android-reverse-engineering-skill/stargazers) [![GitHub last commit](https://img.shields.io/github/last-commit/SimoneAvogadro/android-reverse-engineering-skill)](https://github.com/SimoneAvogadro/android-reverse-engineering-skill/commits/master)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![GitHub stars](https://img.shields.io/github/stars/masa2146/clone-app-skill?style=social)](https://github.com/masa2146/clone-app-skill/stargazers) [![GitHub last commit](https://img.shields.io/github/last-commit/masa2146/clone-app-skill)](https://github.com/masa2146/clone-app-skill/commits/master)
 
-A Claude Code skill that decompiles Android APK/XAPK/JAR/AAR files and **extracts the HTTP APIs** used by the app — Retrofit endpoints, OkHttp calls, hardcoded URLs, authentication patterns — so you can document and reproduce them without the original source code.
+A Claude Code **plugin marketplace** that turns "what should I build?" into a working clone. It chains four plugins into a **discover → analyze → build** pipeline: scan the market for opportunities, reverse-engineer a target app, estimate the effort and infrastructure to clone it, then build a verified, prod-ready clone — apps *and* games.
 
-> **First-class Kotlin support**: modern Android apps are Kotlin/KMP, heavily obfuscated with R8. This skill recovers the **original Kotlin class names** from metadata R8 cannot strip, and extracts APIs from **Ktor**, **Apollo (GraphQL)** and **Koin** — not just the classic Retrofit/OkHttp stack. See [Kotlin name recovery](#kotlin-name-recovery-r8-deobfuscation) below.
+The pipeline runs as **skill handoffs, not a central orchestrator**: each plugin is independently installable and hands its output to the next.
 
-> **Windows / PowerShell support (experimental)**: The `*.ps1` scripts alongside the bash ones are a recent community contribution, still being stabilised. For any issues please open an issue on **this** repository (not on the contributors' upstream forks): the PowerShell scripts are maintained here by [@SimoneAvogadro](https://github.com/SimoneAvogadro).
+> **Origin:** This project began as a fork of Simone Avogadro's [android-reverse-engineering-skill](https://github.com/SimoneAvogadro/android-reverse-engineering-skill) and grew a clone/build pipeline on top. That reverse-engineering skill lives on here as one of the four plugins, vendored byte-identical so it can still track upstream. See [Origin & attribution](#origin--attribution).
 
 ## Table of Contents
 
-- [What it does](#what-it-does)
-- [Requirements](#requirements)
+- [The pipeline](#the-pipeline)
+- [The four plugins](#the-four-plugins)
 - [Installation](#installation)
-- [Usage](#usage)
-- [Repository Structure](#repository-structure)
-- [References](#references)
-- [Acknowledgments](#acknowledgments)
+- [Quick start](#quick-start)
+- [Repository structure](#repository-structure)
+- [Origin & attribution](#origin--attribution)
 - [Disclaimer](#disclaimer)
 - [License](#license)
 
-## What it does
+## The pipeline
 
-| Capability | Description |
-|------------|-------------|
-| **Fingerprint first (Phase 0)** | Triage an APK/XAPK in seconds — detect the framework (Flutter / React Native / Cordova / Xamarin / native-Kotlin), HTTP stack, obfuscation level and native libs *before* spending time on a full decompile |
-| **Decompile** | APK, XAPK, JAR, and AAR files using jadx and Fernflower/Vineflower (single engine or side-by-side comparison) |
-| **Recover Kotlin names** | Rebuild original `*Repository` / `*ViewModel` / `*UseCase` class names from R8-obfuscated binaries using Kotlin metadata that R8 cannot strip |
-| **Extract APIs** | Retrofit, OkHttp, Volley **and modern Kotlin/KMP stacks: Ktor, Apollo (GraphQL), Koin DI** — endpoints, hardcoded URLs, auth headers, tokens and HMAC request-signing schemes |
-| **Trace call flows** | From Activities/Fragments through ViewModels and repositories down to HTTP calls |
-| **Analyze structure** | Manifest, packages, architecture patterns |
-| **Handle obfuscation** | R8-resistant path/URL extraction plus strategies for navigating ProGuard/R8 output |
+```text
+  market-research        clone-app                         clone-build
+ ┌──────────────┐   ┌──────────────────────┐         ┌──────────────────────┐
+ │ scan market, │   │ RE the app (drives   │         │ build a verified,    │
+ │ score & rank │──▶│ android-reverse-     │────────▶│ prod-ready clone via │
+ │ candidates   │   │ engineering) → effort│  build- │ a gated task graph   │
+ │ (non-repeat) │   │ + cost + viability + │  spec   │ (app or game branch) │
+ └──────────────┘   │ clone-build-spec.md  │         └──────────────────────┘
+     discover       └──────────────────────┘              build
+                          analyze
+```
 
-## Requirements
+Each stage is optional and standalone — start anywhere. `clone-app` can drive the reverse-engineering plugin directly from a Google Play URL; `market-research` feeds it candidates; `clone-build` consumes the spec `clone-app` produces. Effort throughout is measured in **AI Sprints** (one focused Claude session), never calendar time.
 
-**Required:**
+## The four plugins
 
-- Java JDK 17+
-- [jadx](https://github.com/skylot/jadx) (CLI)
-
-**Optional (recommended):**
-
-- [Vineflower](https://github.com/Vineflower/vineflower) or [Fernflower](https://github.com/JetBrains/fernflower) — better output on complex Java code
-- [dex2jar](https://github.com/ThexXTURBOXx/dex2jar) — needed to use Fernflower on APK/DEX files
-
-See `plugins/android-reverse-engineering/skills/android-reverse-engineering/references/setup-guide.md` for detailed installation instructions.
+| Plugin | Stage | What it does |
+|--------|-------|--------------|
+| **market-research** | discover | Autonomously scans the app/game market (free web search + Apple App Store chart feeds + LLM trend synthesis), scores ≥10 non-repeating clone candidates by cloneability + market opportunity + monetization fit, and hands picks to `clone-app`. |
+| **clone-app** | analyze | Takes a Google Play URL, drives reverse engineering, scrapes store metrics, estimates AI-assisted clone effort + infrastructure cost, judges market viability, and assembles a standalone `clone-build-spec.md`. Detects the game engine (Unity / Unreal / Godot / native) and dispatches per-engine extraction of mechanics + assets. |
+| **clone-build** | build | Builds a verified, prod-ready clone (app *or* game) from `clone-build-spec.md`, driving a deterministic task graph where every task carries a machine-checkable gate (build / TDD / visual-diff / launch-crash). |
+| **android-reverse-engineering** | engine | Decompiles APK/XAPK/JAR/AAR with jadx and Fernflower/Vineflower, recovers R8-obfuscated Kotlin names, and extracts HTTP APIs (Retrofit/OkHttp/Ktor/Apollo/Koin). Vendored byte-identical from upstream; `clone-app` calls it as its RE engine. |
 
 ## Installation
 
-### From GitHub (recommended)
-
-Inside Claude Code, run:
+Inside Claude Code, add this marketplace and install the plugins you want:
 
 ```text
-/plugin marketplace add SimoneAvogadro/android-reverse-engineering-skill
-/plugin install android-reverse-engineering@android-reverse-engineering-skill
+/plugin marketplace add masa2146/clone-app-skill
+/plugin install market-research@clone-app-skill
+/plugin install clone-app@clone-app-skill
+/plugin install clone-build@clone-app-skill
+/plugin install android-reverse-engineering@clone-app-skill
 ```
 
-The skill will be permanently available in all future sessions.
-
-### From a local clone
+Or from a local clone:
 
 ```bash
-git clone https://github.com/SimoneAvogadro/android-reverse-engineering-skill.git
+git clone https://github.com/masa2146/clone-app-skill.git
 ```
 
-Then in Claude Code:
-
 ```text
-/plugin marketplace add /path/to/android-reverse-engineering-skill
-/plugin install android-reverse-engineering@android-reverse-engineering-skill
+/plugin marketplace add /path/to/clone-app-skill
 ```
 
-## Usage
+The reverse-engineering plugin needs Java JDK 17+ and [jadx](https://github.com/skylot/jadx) (plus optional [Vineflower](https://github.com/Vineflower/vineflower) / [dex2jar](https://github.com/ThexXTURBOXx/dex2jar)); game-asset extraction uses an opt-in Python venv. See each plugin's own README and reference guides for details.
 
-### Slash command
+## Quick start
 
 ```text
+# Discover: what should I build?
+/market-research
+
+# Analyze: is this specific app worth cloning, and how much work is it?
+/clone-app https://play.google.com/store/apps/details?id=com.example.app
+
+# Build: turn the produced spec into a verified clone
+/clone-build
+
+# Or just reverse-engineer an APK you already have
 /decompile path/to/app.apk
 ```
 
-This runs the full workflow: dependency check, decompilation, and initial structure analysis.
+Each skill also activates from natural language — e.g. "research trending games to clone", "analyze cloning this app", "reverse engineer this APK".
 
-### Natural language
-
-The skill activates on phrases like:
-
-- "Decompile this APK"
-- "Reverse engineer this Android app"
-- "Extract API endpoints from this app"
-- "Follow the call flow from LoginActivity"
-- "Analyze this AAR library"
-
-### Manual scripts
-
-The scripts can also be used standalone:
-
-```bash
-# Check dependencies
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/check-deps.sh
-
-# Install a missing dependency (auto-detects OS and package manager)
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/install-dep.sh jadx
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/install-dep.sh vineflower
-
-# Fingerprint an APK/XAPK BEFORE decompiling (Phase 0 triage):
-# framework, HTTP stack, obfuscation level, native libs, notable SDKs
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/fingerprint.sh app.apk
-
-# Decompile APK with jadx (default)
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/decompile.sh app.apk
-
-# Decompile XAPK (auto-extracts and decompiles each APK inside)
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/decompile.sh app-bundle.xapk
-
-# Decompile with Fernflower
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/decompile.sh --engine fernflower library.jar
-
-# Run both engines and compare
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/decompile.sh --engine both --deobf app.apk
-
-# Find API calls — defaults to a full scan across every supported stack
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/find-api-calls.sh output/sources/
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/find-api-calls.sh output/sources/ --retrofit
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/find-api-calls.sh output/sources/ --urls
-
-# Modern Kotlin/KMP stacks and obfuscation-resistant extraction
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/find-api-calls.sh output/sources/ --ktor    # Ktor client
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/find-api-calls.sh output/sources/ --apollo  # Apollo / GraphQL
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/find-api-calls.sh output/sources/ --paths   # quoted path literals that survive R8 inlining
-```
-
-### Kotlin name recovery (R8 deobfuscation)
-
-Most real-world Kotlin/KMP apps ship through R8, so the decompiled classes come
-out as `a.b.c`. R8 renames the JVM symbols but **cannot strip the Kotlin
-metadata strings** — the Kotlin runtime (reflection, coroutines) needs the
-original fully-qualified names at runtime. This skill mines those
-`@DebugMetadata` / `@Metadata` annotations to rebuild an `obfuscated → real`
-class-name map. On a typical app it recovers ~100 % of the
-`*Repository` / `*ViewModel` / `*UseCase` / `*Impl` classes you actually want to
-read.
-
-```bash
-# 1. Build the mapping from the decompiled sources
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/recover-kotlin-names.sh output/sources/ output/names/
-#    → output/names/mapping.tsv, mapping.json, by_package/
-
-# 2. Query it: resolve an obfuscated name, search by real name, or grep
-#    the sources with each hit annotated with its recovered class name
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/lookup-name.sh output/names/ LoginRepository
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/lookup-name.sh output/names/ -o a.b.c
-bash plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/lookup-name.sh output/names/ --grep 'login' output/sources/
-```
-
-## Repository Structure
+## Repository structure
 
 ```text
-android-reverse-engineering-skill/
+clone-app-skill/
 ├── .claude-plugin/
-│   └── marketplace.json                    # Marketplace catalog
+│   └── marketplace.json          # Catalog listing all four plugins
 ├── plugins/
-│   └── android-reverse-engineering/
-│       ├── .claude-plugin/
-│       │   └── plugin.json                 # Plugin manifest
-│       ├── skills/
-│       │   └── android-reverse-engineering/
-│       │       ├── SKILL.md                # Core workflow (Phase 0–5)
-│       │       ├── references/
-│       │       │   ├── setup-guide.md
-│       │       │   ├── jadx-usage.md
-│       │       │   ├── fernflower-usage.md
-│       │       │   ├── api-extraction-patterns.md
-│       │       │   ├── kotlin-name-recovery.md
-│       │       │   ├── third_party_hosts.txt   # denylist for first/third-party bucketing
-│       │       │   └── call-flow-analysis.md
-│       │       └── scripts/
-│       │           ├── check-deps.sh       # Bash
-│       │           ├── check-deps.ps1      # PowerShell
-│       │           ├── install-dep.sh
-│       │           ├── install-dep.ps1
-│       │           ├── decompile.sh
-│       │           ├── decompile.ps1
-│       │           ├── fingerprint.sh          # Phase 0 — pre-decompile triage
-│       │           ├── recover-kotlin-names.sh # R8 → real Kotlin class names
-│       │           ├── lookup-name.sh          # query the recovered name map
-│       │           ├── find-api-calls.sh
-│       │           └── find-api-calls.ps1
-│       └── commands/
-│           └── decompile.md                # /decompile slash command
+│   ├── android-reverse-engineering/   # Vendored byte-identical from upstream — do not modify
+│   ├── clone-app/                     # discover→analyze: RE, effort/cost, viability, build-spec
+│   ├── market-research/               # discover: market scan → scored candidates
+│   └── clone-build/                   # build: gated task graph → prod-ready clone
+├── docs/superpowers/                  # Design specs + implementation plans behind each plugin
 ├── LICENSE
 └── README.md
 ```
 
-## References
+Each project plugin mirrors the same layout — `skills/<name>/{SKILL.md,scripts/,references/}`, `commands/<name>.md`, `tests/`, `.claude-plugin/plugin.json`, `README.md`.
 
-- [jadx — Dex to Java decompiler](https://github.com/skylot/jadx)
-- [Fernflower — JetBrains analytical decompiler](https://github.com/JetBrains/fernflower)
-- [Vineflower — Fernflower community fork](https://github.com/Vineflower/vineflower)
-- [dex2jar — DEX to JAR converter](https://github.com/ThexXTURBOXx/dex2jar)
-- [apktool — Android resource decoder](https://apktool.org/)
+## Origin & attribution
 
-## Acknowledgments
+This repository is derived from **[SimoneAvogadro/android-reverse-engineering-skill](https://github.com/SimoneAvogadro/android-reverse-engineering-skill)** by [Simone Avogadro](https://github.com/SimoneAvogadro), licensed Apache-2.0. The `plugins/android-reverse-engineering/` tree is **kept byte-identical to upstream** so it can be resynced conflict-free (`git pull upstream master`); it retains its own README and full attribution. The `clone-app`, `market-research`, and `clone-build` plugins are new work added by this project on top of that foundation.
 
-Thanks to the contributors who have shaped this skill:
+Thanks to the upstream contributors who shaped the reverse-engineering skill this project builds on:
 
-- [@tajchert](https://github.com/tajchert) — Phase 0 fingerprinting, R8-resistant Kotlin name recovery (`recover-kotlin-names.sh`, `lookup-name.sh`), and Ktor / Apollo / Koin / HMAC extraction patterns (#16)
-- [@philjn](https://github.com/philjn) — Native Windows / PowerShell support (`check-deps.ps1`, `install-dep.ps1`, `decompile.ps1`, `find-api-calls.ps1`) and split/bundled APK detection in `decompile.sh` (#8)
-- [@txhno](https://github.com/txhno) — Migration to the maintained [`ThexXTURBOXx/dex2jar`](https://github.com/ThexXTURBOXx/dex2jar) fork (#12)
-- [@muqiao215](https://github.com/muqiao215) — Decompile partial-success handling, Fernflower timeout safeguard, intermediate-artifact directory (#10)
-- [@kevinaimonster](https://github.com/kevinaimonster) — Chinese localization (`SKILL.md` discovery keywords) (#4)
+- [@tajchert](https://github.com/tajchert) — Phase 0 fingerprinting, R8-resistant Kotlin name recovery, and Ktor / Apollo / Koin / HMAC extraction patterns
+- [@philjn](https://github.com/philjn) — Native Windows / PowerShell support and split/bundled APK detection
+- [@txhno](https://github.com/txhno) — Migration to the maintained [`ThexXTURBOXx/dex2jar`](https://github.com/ThexXTURBOXx/dex2jar) fork
+- [@muqiao215](https://github.com/muqiao215) — Decompile partial-success handling, Fernflower timeout safeguard, intermediate-artifact directory
+- [@kevinaimonster](https://github.com/kevinaimonster) — Chinese localization
 
 ## Disclaimer
 
-This plugin is provided strictly for **lawful purposes**, including but not limited to:
+These plugins are provided strictly for **lawful purposes**, including but not limited to:
 
 - Security research and authorized penetration testing
 - Interoperability analysis permitted under applicable law (e.g., EU Directive 2009/24/EC, US DMCA §1201(f))
 - Malware analysis and incident response
-- Educational use and CTF competitions
+- Market research, competitive analysis, and educational use
 
-**You are solely responsible** for ensuring that your use of this tool complies with all applicable laws, regulations, and terms of service. Unauthorized reverse engineering of software you do not own or do not have permission to analyze may violate intellectual property laws and computer fraud statutes in your jurisdiction.
-
-The authors disclaim any liability for misuse of this tool.
+Reverse engineering, and building a clone of, software you do not own or lack permission to analyze may violate intellectual property laws, copyright, and computer-fraud statutes in your jurisdiction. **Extracted assets (art, audio, models) are copyrighted** — this pipeline treats them as *reference only* to be recreated in-style for authorized use, never as a byte-identical copy to ship. **You are solely responsible** for ensuring your use complies with all applicable laws, regulations, and terms of service. The authors disclaim any liability for misuse.
 
 ## License
 
