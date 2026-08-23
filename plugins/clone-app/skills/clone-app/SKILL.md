@@ -1,5 +1,5 @@
 ---
-description: Analyze a Google Play app to assess cloning it — download the APK, reverse engineer the tech stack and APIs, analyze app-store presence, estimate AI-assisted build effort and infrastructure cost, judge market viability, and optionally generate an implementation plan. Use when the user gives a Google Play URL or package name and wants a clone feasibility analysis, effort estimate, or tech-stack breakdown. 中文触发词：克隆应用、复刻这个app、分析可行性、估算开发量、克隆可行性分析
+description: Take a Google Play app apart completely and assess cloning it — download the package, reverse engineer it, extract all game content (assets grouped per object, levels, physics, shaders, particles, animations, fonts, UI, project settings), recover the C# API surface, reconstruct the architecture, mechanics and runtime flow into a buildable package, analyze the store and market, estimate AI-assisted effort and infra cost, and optionally generate an implementation plan. Use when the user gives a Google Play URL or package name and wants a clone feasibility analysis, the game's content and mechanics, an effort estimate, or a tech-stack breakdown. 中文触发词：克隆应用、复刻这个app、分析可行性、估算开发量、克隆可行性分析、提取游戏资源、还原游戏机制
 trigger: clone app|clone this app|clone feasibility|feasibility analysis|estimate effort to build|reverse engineer and clone|analyze this play store app|can I clone|克隆应用|复刻|可行性分析
 ---
 
@@ -10,8 +10,18 @@ market, estimate AI-assisted clone effort and infrastructure cost, and produce a
 viability report. If the user approves, hand off to the writing-plans skill to
 generate a full implementation plan.
 
-This skill orchestrates 10 phases (0–9). Deterministic steps are factored into helper
-scripts under `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/`. Reverse
+This skill orchestrates 10 phases (0–9). **Everything that learns about the
+target runs by default** — content extraction, the API surface, the deep API /
+logic / backend pass, and for a game the full reconstruction. The only pauses
+are Phase 6 (which clone stack to cost out) and Phase 9 (whether to produce an
+implementation plan). By the end of Phase 5 the target has been fully extracted
+and written up, whatever the user decides afterwards.
+
+If the user explicitly asks for a fast, report-only pass, skip Phases 4 and 5
+and say so in the report — but never skip them silently, and never make the user
+ask for them.
+
+Deterministic steps are factored into helper scripts under `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/`. Reverse
 engineering reuses the sibling `android-reverse-engineering` plugin's scripts.
 
 ## Legal note
@@ -23,7 +33,7 @@ AssetRipper) is high-risk. Proceed only for authorized use; the build spec
 recreates assets in the same style and treats extracted assets as reference, not
 ship-ready, outside authorized contexts.
 
-## Phase 0: Input & Validation
+## Phase 0: Input & Working Directory
 
 Extract the package name:
 ```bash
@@ -39,7 +49,7 @@ WORK="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/init-workdir.sh "$PK
 The split is by what the reader does with it — **deliverables/** is written for a
 person, **extracted/** is clean data for a machine, **raw/** is regenerable
 intermediates. Write every artifact into the right layer; the paths below say
-which. Nothing in `raw/` is ever deleted automatically (Phases 8 and 9 read back
+which. Nothing in `raw/` is ever deleted automatically (Phases 4, 5 and 9 read back
 from it) — the user clears it with `clean-workdir.sh` when finished.
 
 If the user points at an older flat working directory, migrate it first:
@@ -47,7 +57,7 @@ If the user points at an older flat working directory, migrate it first:
 (add `--dry-run` to preview; it moves, never deletes, and reports anything it
 did not recognise).
 
-## Phase 1: APK Download
+## Phase 1: Package Download
 
 ```bash
 APK="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/download-apk.sh "$PKG" "$WORK/raw/package")"
@@ -60,7 +70,7 @@ JavaScript, handles XAPK split bundling) and prints the path (`app.apk` or
 `CLONE_APP_APKEEP_SOURCE=apk-combo`) — tell the user the download failed and
 ask for a local APK/XAPK path; set `APK` to that path.
 
-## Phase 2: Reverse Engineering (probe → dispatch → consume)
+## Phase 2: Reverse Engineering & Content Extraction (probe → dispatch → consume)
 
 RE runs inside an **isolated subagent** so the decompiled sources never flood
 this orchestrator's context. The subagent prefers the
@@ -256,7 +266,7 @@ Read `$WORK/extracted/re-summary.txt` (the only RE text in this context). From i
 framework, HTTP stack, host counts, endpoint count, key-flow names, secrets
 count, and the RE method. Read `$WORK/extracted/re-digest.md` or `$WORK/extracted/payloads.json`
 **on demand** when a later phase needs detail. Keep the summary in context for
-Phases 3–8.
+Phases 3–9.
 
 ## Phase 3: Store Analysis
 
@@ -293,70 +303,17 @@ PY
 If `screenshot_urls` is null/empty (layout change), note it and rely on
 `design-tokens.json` + a web image search for visual reference.
 
-## Phase 4: Stack Recommendation
+## Phase 4: Deep Extraction (fidelity pass)
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/stack-recommendation-guide.md`.
-Using the RE results + store data, present 2-3 stack options as a table and ask
-the user to choose. **Wait for the user's choice before Phase 5.** Lock it.
+Deep extraction, run **by default** — it learns about the target, it does not
+commit to building anything. Read
+`${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/fidelity-pass-guide.md`.
 
-## Phase 5: Effort & Cost Estimation
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/effort-estimation-guide.md`
-and `infra-cost-guide.md`. Build:
-- read `$WORK/extracted/payloads.json`; the endpoint count and the payload complexity of
-  the key flows size the backend work,
-- the feature list + backend surface → AI-Sprint effort table (min-max total,
-  uncertainty band; widen the band when RE Method is `limited:`),
-- the MVP/Growth/Scale monthly infra cost table.
-Base both on the **user-selected stack** from Phase 4.
-
-## Phase 6: Market Viability Report
-
-Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/report-template.md`.
-Fill every section from the data gathered. For market analysis (competitors,
-market size), use web search as needed. Produce a GO / CONDITIONAL GO / NO GO
-verdict tying effort + cost against market opportunity.
-Include a **Backend API Surface** section: summarize the Tier-1 inventory from
-`$WORK/extracted/re-digest.md` and the key-flow payloads from `$WORK/extracted/payloads.json` (host
-list, endpoint count, auth model, and the auth/payment/core request+response
-shapes). If RE Method was `limited:`, say so and note the reduced confidence.
-Also fill the **Design System** section from `$WORK/extracted/design-tokens.json` and
-`$WORK/extracted/design-digest.md` per `report-template.md`. For game engines, also fill the **Game Content** section (§4b) from
-`$WORK/extracted/game-assets/manifest.json`, `coverage-report.md`, `IMPORT.md`,
-`levels/level-analysis.json`, `project-settings/README.md` and `shaders/README.md`
-per `report-template.md`.
-
-Write the report:
-```
-$WORK/deliverables/clone-report-<YYYY-MM-DD>.md
-```
-(Use the actual run date.) Show the user a concise summary + the verdict.
-
-## Phase 7: Decision Gate
-
-Ask: "Feasibility report saved to `$WORK/deliverables/clone-report-<date>.md`. Proceed to
-build the implementation plan? (This runs the deep **fidelity pass** — full
-API payloads, in-app logic, navigation graph, and an inferred backend design —
-and produces a second report.)"
-- **Yes** → run Phase 8: the fidelity pass, then assemble the build spec and
-  hand off to `superpowers:writing-plans`.
-- **No** → stop; the feasibility report stands on its own. The fidelity pass
-  (and its token cost) is never incurred.
-
-**When a game engine was detected**, offer the deeper option in the same
-question: "…or go all the way and produce the **full reconstruction** —
-architecture, every mechanic, the stage-by-stage runtime flow with the animation
-/VFX/sound that fires at each beat, the meta and LiveOps design, an honest list
-of what is not recoverable, and a compiling code skeleton (Phase 9)."
-- **Reconstruction** → run Phase 8, then Phase 9.
-Phase 9 is the most expensive phase in the skill and the most useful for a game;
-never run it without the user asking.
-
-## Phase 8: Fidelity Pass + Build Spec
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/fidelity-pass-guide.md`.
 
-### Phase 8a — Fidelity subagent (deep extraction)
+### Phase 4a — Deep-extraction subagent
 
 Dispatch one subagent (Agent tool, `general-purpose`). It reuses what Phase 2
 already decompiled to `$WORK/raw/decompiled` — **no re-download, no re-decompile**. Pass
@@ -380,41 +337,25 @@ Its instructions:
 If the subagent fails, retry once; if it still fails, continue with whatever
 artifacts exist and note the gap in the fidelity report.
 
-### Phase 8b — Fidelity report
+### Phase 4b — Fidelity report
 
 Write `$WORK/deliverables/fidelity-report-<YYYY-MM-DD>.md` (actual run date): summarize the
 logic digest, navigation graph, full API surface, and backend recon, each with
 its confidence. This is a standalone report alongside the feasibility one.
 
-### Phase 8c — Build spec
+## Phase 5: Game Reconstruction (games)
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/clone-build-spec-template.md`.
-Assemble `$WORK/deliverables/clone-build-spec.md`, filling every section from the artifacts:
-- §2 from `$WORK/extracted/design-tokens.json` (+ `design-digest.md`),
-- §3 one entry per screen, each paired with `$WORK/extracted/store/screenshots/NN.png`, plus its
-  logic from `$WORK/extracted/logic-digest.md`,
-- §3b user-flow diagrams from `$WORK/extracted/logic-digest.md`,
-- §4 from `$WORK/extracted/nav-graph.json`,
-- §5 from `$WORK/extracted/payloads.json` (full Tier-2), §5b + §6 from `$WORK/extracted/backend-recon.md`,
-- §7 asset inventory from `$WORK/raw/decompiled` (or `$WORK/extracted/game-assets/` for Unity),
-- §8 acceptance criteria per screen + flow,
-- §10 absolute paths to every `$WORK/` artifact.
-Use the **Game variant** sections when RE Method indicated Unity.
-
-Then invoke `superpowers:writing-plans`, passing `$WORK/deliverables/clone-build-spec.md` as
-the spec and citing BOTH `$WORK/deliverables/clone-report-<date>.md` and
-`$WORK/deliverables/fidelity-report-<date>.md` as reference. The build spec + `$WORK/` is the
-standalone input — a fresh session with it can build an exact / near-exact clone.
-
-## Phase 9: Game Reconstruction (games only, on request)
+Run **by default whenever a game engine was detected.** For a game this is the
+point of the whole skill: it turns the extracted artifacts into architecture,
+mechanics, runtime flow, meta/LiveOps design, an unknowns ledger and a code
+skeleton. Skip it only for non-games, or when the user explicitly asked for a
+fast report-only pass.
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/game-reconstruction-guide.md`.
-Turns the extracted artifacts into a buildable reconstruction: architecture,
-mechanics, runtime flow, meta/LiveOps design, an unknowns ledger, and a code
-skeleton. Requires Phase 2's game-content extraction and, for IL2CPP builds,
+Requires Phase 2's game-content extraction and, for IL2CPP builds,
 `$WORK/extracted/api-surface.json`.
 
-### Phase 9a — Dispatch the reconstruction subagent
+### Phase 5a — Dispatch the reconstruction subagent
 
 **This must run in a subagent.** `api-surface.md` is 4–10 MB on a real game;
 reading it in this context would end the session. Dispatch one subagent (Agent
@@ -436,13 +377,95 @@ to `game-reconstruction-guide.md`. Its instructions:
 If the subagent fails, retry once; if it still fails, keep whatever it wrote and
 report the gap — a partial reconstruction is useful, a silent one is not.
 
-### Phase 9b — Report
+### Phase 5b — Report
 
 Tell the user what landed, and be explicit about the split: the **design** is
 recovered, the **balance** is not. Point at `05-UNKNOWNS.md` as the tuning
 backlog and at `code/README.md` for the measured project settings to apply
 first. Add a Reconstruction section to the feasibility report linking the
 package.
+
+## Phase 6: Stack Recommendation
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/stack-recommendation-guide.md`.
+Using the RE results + store data, present 2-3 stack options as a table and ask
+the user to choose. **Wait for the user's choice before Phase 7.** Lock it.
+By this point the extraction and reconstruction are already on disk, so the
+choice only decides what the effort and cost tables are costed against.
+
+## Phase 7: Effort & Cost Estimation
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/effort-estimation-guide.md`
+and `infra-cost-guide.md`. Build:
+- read `$WORK/extracted/payloads.json`; the endpoint count and the payload complexity of
+  the key flows size the backend work,
+- the feature list + backend surface → AI-Sprint effort table (min-max total,
+  uncertainty band; widen the band when RE Method is `limited:`),
+- the MVP/Growth/Scale monthly infra cost table.
+Base both on the **user-selected stack** from Phase 6. For a game, size the
+work against `$WORK/deliverables/reconstruction/` — its mechanics inventory and
+`05-UNKNOWNS.md` are a far better estimate basis than a screen count.
+
+## Phase 8: Reports
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/report-template.md`.
+Fill every section from the data gathered. For market analysis (competitors,
+market size), use web search as needed. Produce a GO / CONDITIONAL GO / NO GO
+verdict tying effort + cost against market opportunity.
+Include a **Backend API Surface** section: summarize the Tier-1 inventory from
+`$WORK/extracted/re-digest.md` and the key-flow payloads from `$WORK/extracted/payloads.json` (host
+list, endpoint count, auth model, and the auth/payment/core request+response
+shapes). If RE Method was `limited:`, say so and note the reduced confidence.
+By this phase the deep pass (Phase 4) and, for games, the reconstruction
+(Phase 5) have already run — cite them. Add a **Reconstruction** section linking
+`$WORK/deliverables/reconstruction/` with its document list, the subsystems
+covered, and the split between recovered design and unrecovered balance.
+
+Also fill the **Design System** section from `$WORK/extracted/design-tokens.json` and
+`$WORK/extracted/design-digest.md` per `report-template.md`. For game engines, also fill the **Game Content** section (§4b) from
+`$WORK/extracted/game-assets/manifest.json`, `coverage-report.md`, `IMPORT.md`,
+`levels/level-analysis.json`, `project-settings/README.md` and `shaders/README.md`
+per `report-template.md`.
+
+Write the report:
+```
+$WORK/deliverables/clone-report-<YYYY-MM-DD>.md
+```
+(Use the actual run date.) Show the user a concise summary + the verdict.
+
+## Phase 9: Decision Gate → Build Spec
+
+### Phase 9a — Ask
+
+By now **everything about the target has been extracted and written up**:
+content, API surface, deep API payloads, in-app logic, navigation, backend
+recon, and — for a game — the full reconstruction. What remains is a decision
+about *doing the work*, not about learning more.
+
+Ask: "Reports are in `$WORK/deliverables/`. Assemble the **build spec** and hand
+off to `writing-plans` for a full implementation plan?"
+- **Yes** → Phase 9b.
+- **No** → stop. Everything already produced stands on its own.
+
+### Phase 9b — Build spec + plan handoff
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/clone-build-spec-template.md`.
+Assemble `$WORK/deliverables/clone-build-spec.md`, filling every section from the artifacts:
+- §2 from `$WORK/extracted/design-tokens.json` (+ `design-digest.md`),
+- §3 one entry per screen, each paired with `$WORK/extracted/store/screenshots/NN.png`, plus its
+  logic from `$WORK/extracted/logic-digest.md`,
+- §3b user-flow diagrams from `$WORK/extracted/logic-digest.md`,
+- §4 from `$WORK/extracted/nav-graph.json`,
+- §5 from `$WORK/extracted/payloads.json` (full Tier-2), §5b + §6 from `$WORK/extracted/backend-recon.md`,
+- §7 asset inventory from `$WORK/raw/decompiled` (or `$WORK/extracted/game-assets/` for Unity),
+- §8 acceptance criteria per screen + flow,
+- §10 absolute paths to every `$WORK/` artifact.
+Use the **Game variant** sections when RE Method indicated Unity.
+
+Then invoke `superpowers:writing-plans`, passing `$WORK/deliverables/clone-build-spec.md` as
+the spec and citing BOTH `$WORK/deliverables/clone-report-<date>.md` and
+`$WORK/deliverables/fidelity-report-<date>.md` as reference. The build spec + `$WORK/` is the
+standalone input — a fresh session with it can build an exact / near-exact clone.
 
 ## Error Handling Summary
 | Scenario | Action |
@@ -464,10 +487,11 @@ package.
 | Extraction venv unavailable | `unity-assets.sh` exits 3 with install guidance — no game content is produced; surface this at the Phase 2c gate, never proceed silently |
 | `unity-assets.sh` exits 4 | extraction ran but produced no manifest — report as a failure, do not treat an empty `game-assets/` as coverage |
 | Entity has no mesh | check `geometry_status` in its `entity.json`: `builtin-primitive` / `procedural` / `external-reference` are findings, not failures |
-| Phase 9 requested for a non-game | decline — reconstruction needs a game engine's extracted content; the Phase 8 build spec is the right output |
-| Phase 9 subagent fails | retry once, then keep the partial `reconstruction/` and name the missing documents |
-| `api-surface.json` missing | Phase 9 still runs from assets alone, but mechanics drop to `[D]`-only; say so in the reconstruction README |
+| Non-game package | skip Phase 5 (reconstruction needs a game engine's extracted content); everything else runs unchanged |
+| Phase 5 subagent fails | retry once, then keep the partial `reconstruction/` and name the missing documents |
+| `api-surface.json` missing | Phase 5 still runs from assets alone, but mechanics drop to `[D]`-only; say so in the reconstruction README |
 | No screenshots on Play | note it, rely on design-tokens + web image search |
-| Phase 7 = No | stop after feasibility report; skip the fidelity pass |
-| Fidelity subagent fails | retry once, then continue with partial artifacts and note the gap |
+| Phase 9 = No | stop; every extraction and report already produced stands on its own |
+| User asks for a fast pass | skip Phases 4 and 5, state the omission in the report; never skip them unasked |
+| Deep-extraction subagent fails | retry once, then continue with partial artifacts and note the gap |
 | extract-logic/nav-graph finds nothing (Flutter/RN) | note low confidence, lean on screenshots + API contract |

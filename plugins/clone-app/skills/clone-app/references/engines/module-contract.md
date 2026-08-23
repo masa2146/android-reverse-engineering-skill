@@ -2,7 +2,7 @@
 
 Every per-engine extraction module (unity-il2cpp, unity-mono, unreal, godot,
 native) is loaded on demand by `detect-engine.sh` + the Phase 2 dispatcher and
-MUST write these four artifacts to `$WORK/`, so the Phase 8 Clone Build Spec
+MUST write these four artifacts to `$WORK/extracted/`, so the Phase 9 Clone Build Spec
 assembler never branches on engine.
 
 ## Outputs

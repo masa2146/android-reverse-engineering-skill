@@ -103,9 +103,9 @@ plus these paths — never raw resources, sources, or assets.
 |---|---|
 | `limited: unity-no-tools` | Unity build but Il2CppInspectorRedux/AssetRipper absent — partial digest, assets/types may be empty. |
 
-## Fidelity pass artifacts (Phase 8 — proceed-to-build only)
+## Deep-extraction artifacts (Phase 4 — runs by default)
 
-When the user proceeds to build at the Phase 7 gate, the Phase 8 fidelity
+Phase 4 runs unconditionally, before any gate. Its deep-extraction
 subagent reuses `$WORK/raw/decompiled` (no re-decompile) and ALSO writes:
 
 - `$WORK/extracted/logic-digest.md` — in-app logic & workflows, distilled from

@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash, Read, Glob, Grep, Write, Edit, WebFetch, WebSearch, Skill
-description: Analyze a Google Play app for cloning — RE, effort, market viability, optional plan
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit, WebFetch, WebSearch, Skill, Agent
+description: Extract everything from a Google Play app — content, API surface, mechanics, architecture — then judge cloning it
 user-invocable: true
 argument-hint: <Google Play URL or package name>
 argument: Google Play URL or package name (optional)
@@ -8,25 +8,56 @@ argument: Google Play URL or package name (optional)
 
 # /clone-app
 
-Run the full clone-feasibility workflow on a Google Play app.
+Take a Google Play app apart completely, then assess cloning it.
 
 ## Instructions
 
-Follow the clone-app skill workflow in
-`${CLAUDE_PLUGIN_ROOT}/skills/clone-app/SKILL.md` exactly, phases 0 through 7.
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/SKILL.md` exactly, phases 0
+through 9.
 
 ### Step 1: Get the target
 If the user passed a URL or package name as an argument, use it. Otherwise ask
 for the Google Play URL or package name.
 
 ### Step 2: Run the skill
-Execute Phase 0 → Phase 7 from SKILL.md. Pause for the user at:
-- Phase 4 (stack choice),
-- Phase 7 (proceed to implementation plan?).
+
+**Everything that learns about the target runs by default.** Do not offer the
+extraction, the API surface, the deep pass or the reconstruction as options and
+do not wait to be asked for them — by the end of Phase 5 the target is fully
+extracted and written up.
+
+Phases 0–5 (no interaction):
+- **0–1** working directory + package download
+- **2** reverse engineering, engine dispatch, **full content extraction**
+  (assets grouped per entity, levels, physics, shaders, particles, animations,
+  fonts, UI, project settings) and the **IL2CPP API surface**
+- **3** store metrics and screenshots
+- **4** deep extraction: full API payloads, in-app logic, navigation graph,
+  backend recon
+- **5** for a game: the **reconstruction** — architecture, mechanics, runtime
+  flow, meta/LiveOps design, unknowns ledger, code skeleton
+
+Then exactly two interaction points:
+- **Phase 6** — which clone stack to cost the estimate against
+- **Phase 9** — whether to assemble the build spec and hand off to
+  `superpowers:writing-plans`
+
+Answering "no" at Phase 9 costs nothing already produced.
+
+Skip Phases 4 and 5 **only** if the user explicitly asks for a fast,
+report-only pass, and say so in the report.
 
 Honor the Error Handling Summary table in SKILL.md at every phase.
 
 ### Step 3: Deliver
-Ensure the report is written to `./work/<package>/clone-report-<date>.md` and
-summarize the verdict. If the user approves at Phase 7, invoke
-`superpowers:writing-plans` with the report as the spec.
+Point the user at `./work/<package>/` and its `README.md`, which maps the three
+layers:
+- `deliverables/` — `clone-report-<date>.md`, `fidelity-report-<date>.md`, and
+  for a game `reconstruction/`
+- `extracted/` — `game-assets/`, `api-surface.*`, RE digests, `store/`
+- `raw/` — package, decompiled sources, unpack scratch (regenerable; clear it
+  with `clean-workdir.sh` when finished)
+
+Summarise the verdict, and for a game say plainly what was recovered (design,
+mechanics, assets, constants) and what was not (script field values, shader
+bytecode, method bodies).

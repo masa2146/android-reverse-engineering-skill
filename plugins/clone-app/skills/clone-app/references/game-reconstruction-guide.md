@@ -1,12 +1,14 @@
-# Game Reconstruction Guide (Phase 9)
+# Game Reconstruction Guide (Phase 5)
 
 How to turn the extracted artifacts into a **buildable reconstruction** of a
 game: its architecture, every mechanic, the stage-by-stage runtime flow, the
 meta and LiveOps design, an honest list of what could not be recovered, and a
 code skeleton that compiles.
 
-This is the deepest output the skill produces. Phases 0–8 collect facts; this
-phase turns them into something a developer can build from.
+This is the deepest output the skill produces, and it runs **by default for
+every game** — never as an option the user has to ask for. Phases 0–4 collect
+facts; this phase turns them into something a developer can build from, before
+any decision gate.
 
 ## Inputs — and how to read them without destroying your context
 

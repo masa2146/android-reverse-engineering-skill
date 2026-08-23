@@ -73,9 +73,10 @@ Nothing in `raw/` is removed automatically — Phases 8 and 9 read back from it.
 than deleting and reporting anything it did not recognise.
 
 
-## Game reconstruction (Phase 9, on request)
+## Game reconstruction (Phase 5, always)
 
-For a game, the deepest output is a reconstruction package under
+For a game this is the point of the skill, and it runs by default — before any
+decision gate, without being asked. The reconstruction package lands under
 `work/<pkg>/reconstruction/`: the service architecture, every gameplay mechanic
 with its real field and method names, a stage-by-stage runtime flow naming the
 animation, VFX and sound that fires at each beat, the economy/meta/LiveOps
@@ -85,6 +86,12 @@ are either measured (`// [D]`) or explicitly open (`// TODO tune`).
 It is driven by `references/game-reconstruction-guide.md` and runs in a
 subagent — the recovered API surface is several megabytes and must never enter
 the orchestrator's context.
+
+The workflow has exactly two interaction points: **Phase 6** (which stack to
+cost the estimate against) and **Phase 9** (whether to produce an implementation
+plan). Everything that learns about the target — content extraction, API
+surface, deep API/logic/backend pass, reconstruction — has already finished by
+then. Declining at Phase 9 costs nothing already produced.
 
 Extraction and the metadata dump are **deterministic**: rerunning them on the
 same package produces a byte-identical tree. The reconstruction documents are

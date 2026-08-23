@@ -1,18 +1,18 @@
 # Fidelity Pass Guide
 
-The fidelity pass is the deep-extraction step that runs **only when the user
-proceeds to build a plan at the Phase 7 gate**. There is no mode flag. Phases
-0–6 already produced the feasibility report (`clone-report-<date>.md`); the
-fidelity pass adds a second standalone report (`fidelity-report-<date>.md`) and
-the build spec. The generated implementation plan references **both** reports.
+The deep-extraction step (Phase 4). It runs **by default, before any gate** —
+it learns about the target rather than committing to build anything, so there is
+nothing for the user to approve. It produces a standalone report
+(`fidelity-report-<date>.md`) alongside the feasibility report, and the build
+spec assembled at Phase 9 references both.
 
 ## What it reuses
 
 The fidelity pass does NOT re-download or re-decompile. It reads what Phase 2
-already wrote to `$WORK/raw/decompiled` (sources, resources). It runs inside a Phase 8
+already wrote to `$WORK/raw/decompiled` (sources, resources). It runs inside a Phase 4a
 subagent so deep extraction never floods the orchestrator context.
 
-## Steps (Phase 8 subagent)
+## Steps (Phase 4 subagent)
 
 1. **Full Tier-2 payloads.** Extend `$WORK/extracted/payloads.json` so EVERY first-party
    endpoint carries request/response/headers — not just auth/payment/core.

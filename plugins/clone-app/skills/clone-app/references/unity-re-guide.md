@@ -134,7 +134,7 @@ style — do not ship them.
 
 ## Game mechanics & formulas (fidelity pass)
 
-In the Phase 8 fidelity pass, deepen `$WORK/extracted/unity-digest.md` beyond the type
+In the Phase 4 deep-extraction pass, deepen `$WORK/extracted/unity-digest.md` beyond the type
 model + netcode to capture the playable rules:
 
 - **Game mechanics** — core loop, win/lose conditions, level/wave progression,

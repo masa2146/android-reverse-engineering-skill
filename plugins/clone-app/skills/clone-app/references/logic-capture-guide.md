@@ -1,6 +1,6 @@
 # Logic Capture Guide
 
-How the Phase 8 subagent turns `extract-logic.py`'s JSON signals (plus the
+How the Phase 4 subagent turns `extract-logic.py`'s JSON signals (plus the
 sources under `$WORK/raw/decompiled`) into `$WORK/extracted/logic-digest.md`.
 
 ## Input
