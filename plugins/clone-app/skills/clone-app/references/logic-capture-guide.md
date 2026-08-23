@@ -1,11 +1,11 @@
 # Logic Capture Guide
 
-How the Phase 8 subagent turns `extract-logic.py`'s JSON signals (plus the
-sources under `$WORK/output`) into `$WORK/logic-digest.md`.
+How the Phase 4 subagent turns `extract-logic.py`'s JSON signals (plus the
+sources under `$WORK/raw/decompiled`) into `$WORK/extracted/logic-digest.md`.
 
 ## Input
 
-`extract-logic.py "$WORK/output" --out "$WORK/logic-signals.json"` emits an
+`extract-logic.py "$WORK/raw/decompiled" --out "$WORK/extracted/logic-signals.json"` emits an
 inventory: `viewmodels`, `usecases`, `validation`, `state_enums`,
 `room_entities`, `room_daos`. Use it as the index of where logic lives; open the
 named files to read the actual rules.

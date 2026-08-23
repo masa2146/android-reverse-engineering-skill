@@ -10,39 +10,39 @@
 What the app does; the parity bar (pixel-perfect visual + feature-complete).
 
 ## 2. Design system
-From `$WORK/design-tokens.json` (confidence: {…}): color palette + roles, type
+From `$WORK/extracted/design-tokens.json` (confidence: {…}): color palette + roles, type
 scale (fonts + sizes), spacing scale, corner radii, light/dark theme. Note where
 confidence is med/low and screenshots are the source of truth.
 
 ## 3. Screen-by-screen spec
 For **each** screen: purpose · layout **component tree** (from native XML) ·
 components · states (empty/loading/error) · navigation in/out · the screen's
-logic (cross-ref `$WORK/logic-digest.md`) · matching screenshot
-(`$WORK/screenshots/NN.png`).
+logic (cross-ref `$WORK/extracted/logic-digest.md`) · matching screenshot
+(`$WORK/extracted/store/screenshots/NN.png`).
 
 ## 3b. User-flow diagrams
-Step-by-step flows (onboarding, core loop, payment) from `$WORK/logic-digest.md`:
+Step-by-step flows (onboarding, core loop, payment) from `$WORK/extracted/logic-digest.md`:
 each step's screen, the action that advances it, and the API call it triggers.
 
 ## 4. Navigation map / IA
-The full screen graph + entry points, generated from `$WORK/nav-graph.json`
+The full screen graph + entry points, generated from `$WORK/extracted/nav-graph.json`
 (nodes = screens, edges = transitions + triggers) — not inferred.
 
 ## 5. API contract
-From `$WORK/payloads.json`: per endpoint — host, method, path, auth,
+From `$WORK/extracted/payloads.json`: per endpoint — host, method, path, auth,
 request body, response shape, headers.
 
 ## 5b. Backend rebuild spec
-The from-scratch backend design from `$WORK/backend-recon.md`: per-endpoint
+The from-scratch backend design from `$WORK/extracted/backend-recon.md`: per-endpoint
 behavior, auth flow, inferred server-side validation. Confidence-stamped — this
 is a rebuild target, not recovered server code.
 
 ## 6. Data model
-Entities, fields, relationships from `$WORK/backend-recon.md` (observed vs
+Entities, fields, relationships from `$WORK/extracted/backend-recon.md` (observed vs
 inferred, each confidence-stamped).
 
 ## 7. Asset inventory
-Icons, fonts, drawables — extract from `$WORK/output` or recreate. List each.
+Icons, fonts, drawables — extract from `$WORK/raw/decompiled` or recreate. List each.
 
 ## 8. Acceptance criteria
 Per screen and per flow — the testable definition of done for prod quality.
@@ -64,5 +64,5 @@ Replace these sections:
   + game rules / formulas (from `unity-digest.md`).
 - **§5 API contract** → **netcode**: backend (Photon/PlayFab/Mirror/custom),
   message types, sync model (from the IL2CPP/Mono type model).
-- **§7 Asset inventory** → `$WORK/game-assets/` manifest (sprites, atlases,
+- **§7 Asset inventory** → `$WORK/extracted/game-assets/` manifest (sprites, atlases,
   audio, shaders, scenes, prefabs) + the AssetRipper project path.

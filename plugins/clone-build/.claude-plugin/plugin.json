@@ -1,13 +1,20 @@
 {
   "name": "clone-build",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn a clone-build-spec.md plus its $WORK artifacts into running, verified, production-ready code for apps (Flutter / native / RN) or games (Unity via MCP), driving a gated task graph.",
   "author": {
     "name": "masa2146"
   },
   "repository": "https://github.com/masa2146/clone-app-skill",
   "license": "Apache-2.0",
-  "keywords": ["clone", "build", "codegen", "unity-mcp", "flutter", "verification"],
+  "keywords": [
+    "clone",
+    "build",
+    "codegen",
+    "unity-mcp",
+    "flutter",
+    "verification"
+  ],
   "skills": "./skills/",
   "commands": "./commands/"
 }

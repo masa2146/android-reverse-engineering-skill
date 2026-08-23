@@ -7,7 +7,7 @@
   },
   "metadata": {
     "description": "Claude Code plugins: Android reverse engineering plus clone-feasibility analysis",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "plugins": [
     {
@@ -20,20 +20,33 @@
       },
       "repository": "https://github.com/SimoneAvogadro/android-reverse-engineering-skill",
       "license": "Apache-2.0",
-      "keywords": ["android", "reverse-engineering", "apk", "jadx", "decompile", "api-extraction"],
+      "keywords": [
+        "android",
+        "reverse-engineering",
+        "apk",
+        "jadx",
+        "decompile",
+        "api-extraction"
+      ],
       "category": "security"
     },
     {
       "name": "clone-app",
       "source": "./plugins/clone-app",
-      "description": "Analyze a Google Play app for cloning: APK reverse engineering, AI-assisted effort estimation, market viability.",
-      "version": "0.1.0",
+      "description": "Take a Google Play app apart completely \u2014 content, API surface, mechanics, architecture, build spec \u2014 then judge cloning it",
+      "version": "0.2.0",
       "author": {
         "name": "masa2146"
       },
       "repository": "https://github.com/masa2146/clone-app-skill",
       "license": "Apache-2.0",
-      "keywords": ["android", "clone", "feasibility", "effort-estimation", "market-analysis"],
+      "keywords": [
+        "android",
+        "clone",
+        "feasibility",
+        "effort-estimation",
+        "market-analysis"
+      ],
       "category": "security"
     },
     {
@@ -46,20 +59,31 @@
       },
       "repository": "https://github.com/masa2146/clone-app-skill",
       "license": "Apache-2.0",
-      "keywords": ["market-research", "app-discovery", "trends", "clone"],
+      "keywords": [
+        "market-research",
+        "app-discovery",
+        "trends",
+        "clone"
+      ],
       "category": "security"
     },
     {
       "name": "clone-build",
       "source": "./plugins/clone-build",
-      "description": "Build a verified, prod-ready clone (app or game) from a clone-build-spec.md, driving a gated task graph.",
-      "version": "0.1.0",
+      "description": "Build a verified, production-ready clone from clone-app's build spec and reconstruction package (app or game)",
+      "version": "0.2.0",
       "author": {
         "name": "masa2146"
       },
       "repository": "https://github.com/masa2146/clone-app-skill",
       "license": "Apache-2.0",
-      "keywords": ["clone", "build", "codegen", "unity-mcp", "verification"],
+      "keywords": [
+        "clone",
+        "build",
+        "codegen",
+        "unity-mcp",
+        "verification"
+      ],
       "category": "security"
     }
   ]

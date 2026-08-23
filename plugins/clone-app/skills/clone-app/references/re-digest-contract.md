@@ -5,7 +5,7 @@ MUST produce these three files under `$WORK/`, then return only the summary.
 This file is the single source of truth for their schema. The subagent prompt
 points here; do not duplicate the schema into SKILL.md prose.
 
-## File 1 — `$WORK/re-digest.md` (human-readable, main artifact)
+## File 1 — `$WORK/extracted/re-digest.md` (human-readable, main artifact)
 
 Required section headings, in this order:
 
@@ -21,7 +21,7 @@ Required section headings, in this order:
 ## RE Method            re-skill | direct-scripts | limited: <framework>
 ```
 
-## File 2 — `$WORK/payloads.json` (machine-readable, durable memory)
+## File 2 — `$WORK/extracted/payloads.json` (machine-readable, durable memory)
 
 Required top-level keys: `package`, `re_method`, `endpoints`, `buildconfig`.
 Each item in `endpoints` has: `host`, `method`, `path`, `auth`, `source`,
@@ -53,7 +53,7 @@ Each item in `endpoints` has: `host`, `method`, `path`, `auth`, `source`,
   row with `null` payloads. Going Tier-2 on every endpoint is a non-goal —
   it is token-expensive and the RE skill itself warns against it.
 
-## File 3 — `$WORK/re-summary.txt` (≤40 lines, the only RE text returned)
+## File 3 — `$WORK/extracted/re-summary.txt` (≤40 lines, the only RE text returned)
 
 Plain text. The subagent's return value = the contents of this file plus the
 paths to the two files above. Fields:
@@ -88,11 +88,11 @@ uncertainty band accordingly.
 
 Beyond the three RE files, the Phase 2 subagent ALSO writes:
 
-- `$WORK/design-tokens.json` + `$WORK/design-digest.md` — from
+- `$WORK/extracted/design-tokens.json` + `$WORK/extracted/design-digest.md` — from
   `extract-design.py` on the decompile root (standard apps). Schema and
   confidence rules: see `design-capture-guide.md`.
-- For Unity builds (`detect-unity.sh` → `il2cpp`/`mono`): `$WORK/unity-digest.md`
-  (C# type model + netcode) and `$WORK/game-assets/` + `manifest.json` (via
+- For Unity builds (`detect-unity.sh` → `il2cpp`/`mono`): `$WORK/extracted/unity-digest.md`
+  (C# type model + netcode) and `$WORK/extracted/game-assets/` + `manifest.json` (via
   `il2cpp-dump.sh`/`ilspycmd` + `unity-assets.sh`). See `unity-re-guide.md`.
 
 The subagent returns the short `design-summary` (and `unity-summary` when Unity)
@@ -103,19 +103,19 @@ plus these paths — never raw resources, sources, or assets.
 |---|---|
 | `limited: unity-no-tools` | Unity build but Il2CppInspectorRedux/AssetRipper absent — partial digest, assets/types may be empty. |
 
-## Fidelity pass artifacts (Phase 8 — proceed-to-build only)
+## Deep-extraction artifacts (Phase 4 — runs by default)
 
-When the user proceeds to build at the Phase 7 gate, the Phase 8 fidelity
-subagent reuses `$WORK/output` (no re-decompile) and ALSO writes:
+Phase 4 runs unconditionally, before any gate. Its deep-extraction
+subagent reuses `$WORK/raw/decompiled` (no re-decompile) and ALSO writes:
 
-- `$WORK/logic-digest.md` — in-app logic & workflows, distilled from
+- `$WORK/extracted/logic-digest.md` — in-app logic & workflows, distilled from
   `extract-logic.py`'s signals per `logic-capture-guide.md`.
-- `$WORK/nav-graph.json` — navigation graph from `extract-nav-graph.py`
+- `$WORK/extracted/nav-graph.json` — navigation graph from `extract-nav-graph.py`
   (keys: `root`, `framework`, `nodes[]`, `edges[]`).
-- `$WORK/backend-recon.md` — inferred backend design per `backend-recon-guide.md`
+- `$WORK/extracted/backend-recon.md` — inferred backend design per `backend-recon-guide.md`
   (confidence-stamped; a rebuild target, not recovered server code).
 
-It also **deepens `$WORK/payloads.json`**: in the fidelity pass, Tier-2
+It also **deepens `$WORK/extracted/payloads.json`**: in the fidelity pass, Tier-2
 request/response/headers are populated for **every first-party endpoint**, not
 just auth/payment/core. This overrides the "Tier-2 on every endpoint is a
 non-goal" rule above, which governs ONLY the Phase 2 feasibility pass.

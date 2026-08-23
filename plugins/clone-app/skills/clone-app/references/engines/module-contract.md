@@ -2,7 +2,7 @@
 
 Every per-engine extraction module (unity-il2cpp, unity-mono, unreal, godot,
 native) is loaded on demand by `detect-engine.sh` + the Phase 2 dispatcher and
-MUST write these four artifacts to `$WORK/`, so the Phase 8 Clone Build Spec
+MUST write these four artifacts to `$WORK/extracted/`, so the Phase 9 Clone Build Spec
 assembler never branches on engine.
 
 ## Outputs
@@ -14,12 +14,31 @@ assembler never branches on engine.
    - `inferred` — from extracted data (ScriptableObjects, DataTables).
    - `signature-only` — il2cpp type model; method body not recovered.
    - `not-recoverable` — native C++ / stripped; flagged, not guessed.
-2. **`game-assets/` + `manifest.json`** — extracted textures/sprites/audio/
-   meshes/scenes/prefabs/fonts. `manifest.json` records per-type counts and the
-   coverage shape consumed by `gen-coverage-report.py`:
+2. **`game-assets/` + `manifest.json`** — extracted content, **grouped by the
+   object it belongs to**, not dumped flat. The Unity module's layout is the
+   reference shape (see `unity-asset-extraction-guide.md`); other engines match
+   it as closely as their format allows:
+   - `entities/<Name>/` — one self-contained folder per game object: model +
+     fracture/LOD pieces + its textures + material values + colliders + joints +
+     rigidbody + animations + particles + `preview.png` + `entity.json`
+     (machine-readable rebuild recipe) + `README.md`.
+   - shared pools for cross-cutting assets: `textures/`, `sprites/`, `audio/`,
+     `fonts/`, `meshes/`, `levels/`, `text/`.
+   - engine-wide capture: `materials.json`, `physics.json`, `shaders/`,
+     `particles/`, `animations/`, `ui/`, `scenes/`, `project-settings/`,
+     `ARCHITECTURE.md`.
+   - `IMPORT.md` — what is directly usable, what is lossy, what must be
+     re-authored, and which importer flags to set by hand.
+   - an engine-appropriate importer under `unity-import/` (or `<engine>-import/`)
+     that turns the extraction into project assets.
+   `manifest.json` records per-type counts and the coverage shape consumed by
+   `gen-coverage-report.py`:
    `{"engine", "assets": {"expected", "extracted", "by_type"}, "mechanics", "notes"}`.
-   `expected` = archive entry count found in the package; `extracted` = files
-   actually written. Never claim more than was written.
+   `expected` = archive entry count found in the package; `extracted` must be
+   **derived from the per-type counts** so it can never over-claim. Assets that
+   are legitimately absent (engine built-in primitives, runtime-generated
+   geometry, content hosted on a CDN) are reported as *findings* with their own
+   status, never counted as extraction failures.
 3. **`netcode-recon.md`** — observed netcode/backend surface (Photon/PlayFab/
    Mirror/HTTP), same confidence stamps. Complements `backend-recon.md`.
 4. **`coverage-report.md`** — produced by
