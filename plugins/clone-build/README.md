@@ -2,7 +2,7 @@
 
 The build/verify stage of the **discover → analyze → build** pipeline
 (`market-research → clone-app → clone-build`). Takes the `clone-build-spec.md` and
-`$WORK/` artifacts produced by clone-app Phase 8 and drives them to running,
+`$WORK/` artifacts produced by clone-app (Phase 9) and drives them to running,
 verified, production-ready code.
 
 ## How it works

@@ -7,7 +7,7 @@
   },
   "metadata": {
     "description": "Claude Code plugins: Android reverse engineering plus clone-feasibility analysis",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "plugins": [
     {
@@ -70,8 +70,8 @@
     {
       "name": "clone-build",
       "source": "./plugins/clone-build",
-      "description": "Build a verified, prod-ready clone (app or game) from a clone-build-spec.md, driving a gated task graph.",
-      "version": "0.1.0",
+      "description": "Build a verified, production-ready clone from clone-app's build spec and reconstruction package (app or game)",
+      "version": "0.2.0",
       "author": {
         "name": "masa2146"
       },

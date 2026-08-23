@@ -1,11 +1,11 @@
 ---
-description: Turn a clone-build-spec.md plus its $WORK/ artifacts into running, verified, production-ready code — for apps (Flutter / native Android / RN) or games (Unity via MCP). Drives a deterministic task graph where every task is gated by a machine-checkable build / TDD / visual-diff / launch check, so even a weak model in a fresh session converges on a correct clone. Use after clone-app Phase 8 has produced a build spec and the user chose "Build it". 中文触发词：克隆构建、生成可运行代码、构建克隆
+description: Turn a clone-build-spec.md plus its $WORK/ artifacts into running, verified, production-ready code — for apps (Flutter / native Android / RN) or games (Unity via MCP). Drives a deterministic task graph where every task is gated by a machine-checkable build / TDD / visual-diff / launch check, so even a weak model in a fresh session converges on a correct clone. Use after clone-app has produced a build spec (its Phase 9) — clone-app now writes one on every run. 中文触发词：克隆构建、生成可运行代码、构建克隆
 trigger: build the clone|clone build|generate the app from spec|build from clone-build-spec|implement the clone|克隆构建|生成可运行代码
 ---
 
 # Clone Build — Spec to Prod-Ready Code
 
-Take `clone-build-spec.md` and the `$WORK/` artifacts from clone-app Phase 8, scaffold
+Take `clone-build-spec.md` and the `$WORK/` artifacts from clone-app (Phase 9), scaffold
 a buildable project, generate a gated task graph, and drive it to verified,
 production-ready code. Games go through the Unity-MCP branch; apps through the
 Flutter / native-Android / RN branch. The two branches share this spine; their
@@ -20,9 +20,23 @@ research). The clone-app legal note still governs which apps may be analyzed at 
 Extracted game art is reference-only outside authorized use — recreate in-style.
 
 ## P0: Preflight & spec load
-Locate the build spec (default `./work/<pkg>/clone-build-spec.md`) and its `$WORK`
-artifact dir. If either is missing, stop and tell the user to run clone-app Phase 8
-first.
+Locate the build spec (default `./work/<pkg>/deliverables/clone-build-spec.md`)
+and its `$WORK` artifact dir. clone-app lays the working dir out in three layers:
+- `deliverables/` — the spec, the feasibility and fidelity reports, and for a
+  game `reconstruction/` (architecture, mechanics, runtime flow, unknowns, code
+  skeleton). **For a game, `reconstruction/` is the real specification** — read
+  it before the spec's screen list.
+- `extracted/` — `game-assets/` (per-entity models, textures, levels, physics,
+  shaders, particles, animations, fonts, UI, project settings), `api-surface.*`,
+  RE digests, `store/`.
+- `raw/` — package and decompiled sources; regenerable, may already be deleted.
+
+An older flat working dir can be converted with clone-app's
+`migrate-workdir.sh`. If the spec is missing, stop and tell the user to run
+clone-app first.
+
+Write build output into `$WORK/deliverables/` (reports) and `$WORK/clone/` (code)
+— never into `extracted/` or `raw/`.
 
 Detect the branch:
 ```bash
@@ -30,7 +44,7 @@ read BRANCH SUBSTACK < <(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-build/scripts/d
 ```
 Probe the toolchain:
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-build/scripts/preflight.sh --out "$WORK/preflight.json"
+bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-build/scripts/preflight.sh --out "$WORK/deliverables/preflight.json"
 ```
 Then load **only** the matching branch guide: `references/app-build-guide.md` for
 `app`, `references/game-build-guide.md` for `game`. (These are added in later plans;
@@ -47,7 +61,7 @@ guidance and pause; never half-fail.
 Generate the gated task graph from the spec + artifacts:
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/clone-build/scripts/gen-build-plan.py \
-  "$SPEC" --work "$WORK" --out "$WORK/build-plan.json"
+  "$SPEC" --work "$WORK" --out "$WORK/deliverables/build-plan.json"
 ```
 The schema and the generation rules are in `references/plan-contract.md`; the gate
 kind per task type is in `references/gate-catalog.md`. Any entry in the plan's
@@ -72,7 +86,7 @@ the app branch this is the always-on hard gate (build + install + launch + no fa
 log); the visual pass runs when an emulator/device is present, else it is SKIP.
 
 ## P5: Build report
-Write `$WORK/build-report-<YYYY-MM-DD>.md` from
+Write `$WORK/deliverables/build-report-<YYYY-MM-DD>.md` from
 `references/build-report-template.md`: tasks done, gate evidence, visual-fidelity
 verdicts (or SKIP + reason), remaining `needs-human-input` items, and next manual
 steps.
@@ -80,7 +94,7 @@ steps.
 ## Error Handling Summary
 | Scenario | Action |
 |---|---|
-| Spec / artifacts missing | stop; tell user to run clone-app Phase 8 first |
+| Spec / artifacts missing | stop; tell user to run clone-app first (it writes the spec on every run) |
 | Branch guide file absent | note the gap, continue with the spine |
 | Toolchain missing (Unity / flutter / gradle / node) | print setup guidance, pause |
 | MCP not connected after Unity scaffold | guidance, poll editor state, pause |
