@@ -30,5 +30,11 @@ has "detect-engine.sh"
 has "module-contract.md"
 has "coverage-report.md"
 has "gen-coverage-report.py"
+has "il2cpp-metadata-dump.py"
+has "api-surface.json"
+has "## Phase 9"
+has "game-reconstruction-guide.md"
+has "reconstruction/"
+has "Never read \`api-surface.md\`"
 
 exit $fail

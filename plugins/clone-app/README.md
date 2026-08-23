@@ -55,6 +55,24 @@ git pull upstream master
 The clone-app plugin lives in its own directory, so upstream updates to
 `android-reverse-engineering` merge cleanly.
 
+## Game reconstruction (Phase 9, on request)
+
+For a game, the deepest output is a reconstruction package under
+`work/<pkg>/reconstruction/`: the service architecture, every gameplay mechanic
+with its real field and method names, a stage-by-stage runtime flow naming the
+animation, VFX and sound that fires at each beat, the economy/meta/LiveOps
+design, an honest unknowns ledger, and a compiling code skeleton whose constants
+are either measured (`// [D]`) or explicitly open (`// TODO tune`).
+
+It is driven by `references/game-reconstruction-guide.md` and runs in a
+subagent — the recovered API surface is several megabytes and must never enter
+the orchestrator's context.
+
+Extraction and the metadata dump are **deterministic**: rerunning them on the
+same package produces a byte-identical tree. The reconstruction documents are
+authored, so wording varies; the file set, section structure, evidence tags and
+every factual claim do not.
+
 ## Game content extraction (Unity)
 
 When Phase 2 detects a Unity build, `unity-assets.sh` runs `unity-extract.py`

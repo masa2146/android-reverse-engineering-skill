@@ -10,7 +10,7 @@ market, estimate AI-assisted clone effort and infrastructure cost, and produce a
 viability report. If the user approves, hand off to the writing-plans skill to
 generate a full implementation plan.
 
-This skill orchestrates 8 phases. Deterministic steps are factored into helper
+This skill orchestrates 10 phases (0–9). Deterministic steps are factored into helper
 scripts under `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/`. Reverse
 engineering reuses the sibling `android-reverse-engineering` plugin's scripts.
 
@@ -329,6 +329,15 @@ and produces a second report.)"
 - **No** → stop; the feasibility report stands on its own. The fidelity pass
   (and its token cost) is never incurred.
 
+**When a game engine was detected**, offer the deeper option in the same
+question: "…or go all the way and produce the **full reconstruction** —
+architecture, every mechanic, the stage-by-stage runtime flow with the animation
+/VFX/sound that fires at each beat, the meta and LiveOps design, an honest list
+of what is not recoverable, and a compiling code skeleton (Phase 9)."
+- **Reconstruction** → run Phase 8, then Phase 9.
+Phase 9 is the most expensive phase in the skill and the most useful for a game;
+never run it without the user asking.
+
 ## Phase 8: Fidelity Pass + Build Spec
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/fidelity-pass-guide.md`.
@@ -383,6 +392,44 @@ the spec and citing BOTH `$WORK/clone-report-<date>.md` and
 `$WORK/fidelity-report-<date>.md` as reference. The build spec + `$WORK/` is the
 standalone input — a fresh session with it can build an exact / near-exact clone.
 
+## Phase 9: Game Reconstruction (games only, on request)
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/game-reconstruction-guide.md`.
+Turns the extracted artifacts into a buildable reconstruction: architecture,
+mechanics, runtime flow, meta/LiveOps design, an unknowns ledger, and a code
+skeleton. Requires Phase 2's game-content extraction and, for IL2CPP builds,
+`$WORK/api-surface.json`.
+
+### Phase 9a — Dispatch the reconstruction subagent
+
+**This must run in a subagent.** `api-surface.md` is 4–10 MB on a real game;
+reading it in this context would end the session. Dispatch one subagent (Agent
+tool, `general-purpose`) and pass it: `$PKG`, `$WORK`, the engine, and the path
+to `game-reconstruction-guide.md`. Its instructions:
+
+1. **Follow the guide exactly** — the output structure, the evidence tags
+   (`[D]` data / `[S]` signature / `[I]` inferred / `[X]` not recoverable), the
+   working order, and the honesty rules are all specified there.
+2. **Never read `api-surface.md` or `api-surface.json` whole.** Use the query
+   recipes in the guide to pull one subsystem at a time.
+3. **Write** `$WORK/reconstruction/` — `README.md`, `01-ARCHITECTURE.md`,
+   `02-GAMEPLAY-MECHANICS.md`, `03-FLOW.md`, `04-META-LIVEOPS.md`,
+   `05-UNKNOWNS.md`, and `code/`.
+4. **Return** only: the file list with line counts, the count of `[D]`/`[S]`
+   claims and `// TODO tune` markers, the subsystems covered, and anything it
+   could not cover. **Never** the document contents or any source.
+
+If the subagent fails, retry once; if it still fails, keep whatever it wrote and
+report the gap — a partial reconstruction is useful, a silent one is not.
+
+### Phase 9b — Report
+
+Tell the user what landed, and be explicit about the split: the **design** is
+recovered, the **balance** is not. Point at `05-UNKNOWNS.md` as the tuning
+backlog and at `code/README.md` for the measured project settings to apply
+first. Add a Reconstruction section to the feasibility report linking the
+package.
+
 ## Error Handling Summary
 | Scenario | Action |
 |---|---|
@@ -401,6 +448,9 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | Extraction venv unavailable | `unity-assets.sh` exits 3 with install guidance — no game content is produced; surface this at the Phase 2c gate, never proceed silently |
 | `unity-assets.sh` exits 4 | extraction ran but produced no manifest — report as a failure, do not treat an empty `game-assets/` as coverage |
 | Entity has no mesh | check `geometry_status` in its `entity.json`: `builtin-primitive` / `procedural` / `external-reference` are findings, not failures |
+| Phase 9 requested for a non-game | decline — reconstruction needs a game engine's extracted content; the Phase 8 build spec is the right output |
+| Phase 9 subagent fails | retry once, then keep the partial `reconstruction/` and name the missing documents |
+| `api-surface.json` missing | Phase 9 still runs from assets alone, but mechanics drop to `[D]`-only; say so in the reconstruction README |
 | No screenshots on Play | note it, rely on design-tokens + web image search |
 | Phase 7 = No | stop after feasibility report; skip the fidelity pass |
 | Fidelity subagent fails | retry once, then continue with partial artifacts and note the gap |

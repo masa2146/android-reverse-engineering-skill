@@ -16,7 +16,7 @@ done
 for s in scrape-play-store.py check-appstore.py extract-design.py extract-logic.py extract-nav-graph.py gen-coverage-report.py unity-extract.py render-mesh-preview.py il2cpp-metadata-dump.py; do
   must_exist "$P/skills/clone-app/scripts/$s"
 done
-for r in stack-recommendation-guide effort-estimation-guide infra-cost-guide report-template re-digest-contract design-capture-guide unity-re-guide unity-asset-extraction-guide clone-build-spec-template fidelity-pass-guide logic-capture-guide backend-recon-guide; do
+for r in stack-recommendation-guide effort-estimation-guide infra-cost-guide report-template re-digest-contract design-capture-guide unity-re-guide unity-asset-extraction-guide game-reconstruction-guide clone-build-spec-template fidelity-pass-guide logic-capture-guide backend-recon-guide; do
   must_exist "$P/skills/clone-app/references/$r.md"
 done
 must_exist "$P/skills/clone-app/scripts/requirements-extraction.txt"
