@@ -55,6 +55,38 @@ git pull upstream master
 The clone-app plugin lives in its own directory, so upstream updates to
 `android-reverse-engineering` merge cleanly.
 
+## Game content extraction (Unity)
+
+When Phase 2 detects a Unity build, `unity-assets.sh` runs `unity-extract.py`
+under an opt-in venv (UnityPy + numpy + Pillow) and extracts the game's content
+into `work/<pkg>/game-assets/` — **grouped by the object it belongs to**, not
+dumped flat:
+
+- `entities/<Name>/` — one self-contained folder per game object: model, its
+  pre-modelled fracture pieces, its textures, its material values, colliders,
+  joints, rigidbody, animations, particle systems, a rendered `preview.png`, a
+  machine-readable `entity.json` rebuild recipe and a human `README.md`.
+- shared pools for cross-cutting assets: `textures/`, `sprites/` (with pivot,
+  pixels-per-unit and 9-slice metadata), `audio/`, real `fonts/` (TTF/OTF),
+  `levels/` (plus a derived mechanic-introduction curve and A/B ladder
+  detection), `spine/`, `text/`.
+- engine-wide capture: `materials.json`, `physics.json`, `shaders/` (real names
+  and full property tables, grouped buy-vs-re-author), `particles/` (every
+  module), `animations/` (clips + controllers), `ui/` (canvases and
+  RectTransform trees), `scenes/`, `project-settings/` (with a README naming
+  every value that differs from Unity's defaults), `ARCHITECTURE.md`.
+- `unity-import/ImportExtracted.cs` — a Unity Editor script that rebuilds each
+  entity as a prefab with its colliders, rigidbody and joints applied.
+- `IMPORT.md` — what is directly usable, what was decoded from a lossy format,
+  what needs re-authoring, and which importer flags to set by hand.
+
+Only three things are genuinely unrecoverable from an IL2CPP release build:
+MonoBehaviour/ScriptableObject **field values**, shader **HLSL**, and C#
+**method bodies**. Everything else — including full prefab structure — comes
+out. See `skills/clone-app/references/unity-asset-extraction-guide.md`.
+
+Extracted art is reference material; the transferable output is the structure.
+
 ## Legal
 For lawful use only — your own apps, authorized interoperability, security
 research, or education. You are responsible for compliance.

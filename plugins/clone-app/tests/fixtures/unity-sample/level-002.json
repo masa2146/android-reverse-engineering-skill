@@ -1,0 +1,11 @@
+{
+ "Version": 1,
+ "MoveCount": 12,
+ "Difficulty": 1,
+ "PhysicsQuality": 0,
+ "StabilizeOnSpawn": true,
+ "Entities": [
+  {"Id": "IceSquare_1", "Position": {"x": 0, "y": 0.5, "z": 0}, "Rotation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+  {"Id": "StoneSquare_1", "Position": {"x": 0, "y": 1.5, "z": 0}, "Rotation": {"x": 0, "y": 0, "z": 0, "w": 1}}
+ ]
+}

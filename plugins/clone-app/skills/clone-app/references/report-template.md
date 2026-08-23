@@ -31,10 +31,30 @@
 - Confidence: {high/med/low} (source: APK res + {n} Play screenshots)
 - Full tokens: `$WORK/design-tokens.json`; screenshots: `$WORK/screenshots/`
 
-## 4b. Game Assets (if Unity)
-- Build type: {il2cpp/mono} · Type model: `$WORK/unity-digest.md`
-- Extracted assets: `$WORK/game-assets/` ({n} sprites, {n} scenes, …)
-- Omit this section entirely for non-Unity apps.
+## 4b. Game Content (if a game engine was detected)
+Source: `$WORK/game-assets/` — see its `manifest.json`, `coverage-report.md` and
+`IMPORT.md`. Omit this section entirely for non-game apps.
+
+- **Build type:** {il2cpp/mono} · Type model: `$WORK/unity-digest.md`
+- **Extracted:** {n} entities · {n} meshes ({n} fracture pieces) · {n} textures
+  ({n} lossless / {n} decoded from compressed) · {n} sprites ({n} with 9-slice
+  borders) · {n} materials · {n} shaders · {n} particle systems ·
+  {n} animation clips + {n} controllers · {n} audio · {n} fonts · {n} levels ·
+  {n} UI canvases · {n} scenes
+- **Level design data:** {n} levels, {n} distinct entities, mechanic-introduction
+  curve in `levels/level-analysis.json`{, note A/B ladders if duplicate ids exist}
+- **Engine settings that differ from defaults:** {from
+  `project-settings/README.md` — gravity, solver iterations, fixed timestep, …}.
+  These are the tuning constants a clone would otherwise guess.
+- **Shaders:** {n} built-in · {n} commercial ({name the packages to buy}) ·
+  {n} custom to this game (must be re-authored from the recorded property table)
+- **Derived findings:** {e.g. pre-modelled fracture rather than runtime fracture;
+  MatCap-based shading; built-in-primitive objects; runtime-generated geometry}
+- **Not recovered:** MonoBehaviour/ScriptableObject field values (balance tables,
+  tuning configs), shader HLSL, IL2CPP method bodies — plus anything listed in
+  `coverage-report.md`. State this plainly; do not imply full coverage.
+- **Legal:** extracted art is reference material. The transferable output is the
+  structure — level schema, physics constants, entity taxonomy, architecture.
 
 ## 5. Effort Estimate (AI-Assisted)
 {effort table from effort-estimation-guide}

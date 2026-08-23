@@ -92,51 +92,57 @@ The downstream build spec reads `coverage-report.md` — never assume full cover
 
 ### Phase 2c — Unity tool dependency gate (run after engine dispatch, before the RE subagent dispatch)
 
-Classify the build and confirm the Unity extraction tools are actually present, so
-the cost of a missing tool is surfaced **before** the RE subagent runs — not buried
-in a silent `limited:` digest afterward.
+Classify the build and confirm the extraction tooling is present, so the cost of
+a missing tool is surfaced **before** the RE subagent runs — not buried in a
+silent `limited:` digest afterward.
 
 ```bash
 UNITY="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/detect-unity.sh "$APK")"   # il2cpp | mono | none
+has_venv()   { bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/setup-extraction-venv.sh >/dev/null 2>&1; }
 has_dotnet() { command -v dotnet >/dev/null 2>&1; }
 has_il2cpp() { command -v "${IL2CPP_INSPECTOR_CLI:-Il2CppInspector}" >/dev/null 2>&1; }
 has_ilspy()  { command -v ilspycmd >/dev/null 2>&1; }
-has_ar()     { command -v "${ASSETRIPPER_CLI:-AssetRipper}" >/dev/null 2>&1; }
 ```
 
 If `UNITY` is `none`, set `UNITY_TOOLS=n/a` and skip the rest of this gate.
-Otherwise the required tools are:
+Otherwise:
 
-| Build | Type-model tooling | Asset tooling |
+| Build | Asset + content extraction (primary) | Type-model tooling (secondary) |
 |---|---|---|
-| `il2cpp` | `.NET 10` runtime (`dotnet`) **+** `Il2CppInspector` (Il2CppInspectorRedux, framework-dependent → needs dotnet) | `AssetRipper` |
-| `mono`   | `.NET` runtime (`dotnet`) **+** `ilspycmd` | `AssetRipper` |
+| `il2cpp` | **extraction venv** (`setup-extraction-venv.sh` → UnityPy, numpy, Pillow) | `.NET` runtime (`dotnet`) **+** `Il2CppInspector` (Il2CppInspectorRedux) |
+| `mono`   | **extraction venv** (same) | `.NET` runtime (`dotnet`) **+** `ilspycmd` |
+
+**AssetRipper is not required** — `unity-assets.sh` extracts with UnityPy.
+`ASSETRIPPER_CLI` is an optional supplement only; its absence costs nothing.
 
 > **Reality check for `il2cpp`:** C# method bodies are compiled to native ARM and
-> are unrecoverable **regardless of tools**. The tool only recovers class/method/
-> field *signatures*. State this so the user knows what is — and isn't — at stake.
+> are unrecoverable **regardless of tools**. The IL2CPP tool only recovers
+> class/method/field *signatures* — and the class inventory is recoverable from
+> `MonoScript` records by the extractor anyway. What genuinely rides on the
+> IL2CPP dump is the field/enum type model.
 
-**If any required tool is missing → PAUSE and ask the user** (do not degrade
+**If a required tool is missing → PAUSE and ask the user** (do not degrade
 silently). Tell them, concretely:
-- the build type and that `il2cpp` method bodies are unrecoverable anyway (only
-  type signatures + assets are at risk);
-- what each missing tool loses (`il2cpp` dump absent → no class/method names, data
-  model, or netcode types in `unity-digest.md`; `AssetRipper` absent → no extracted
-  sprites/audio/scenes, screenshots only);
-- the exact install commands + cost:
-  - `brew install --cask dotnet-sdk` — .NET 10, ~1 GB, **sudo** (user-run via `!`)
+- the build type, and that `il2cpp` method bodies are unrecoverable either way;
+- what each missing piece loses:
+  - **extraction venv absent → no game content at all**: no meshes, textures,
+    sprites, materials, shaders, particles, animations, fonts, levels, scenes,
+    prefab structure or project settings. This is the expensive one.
+  - `dotnet`/`Il2CppInspector` absent → no field/enum type model in
+    `unity-digest.md`.
+- the exact commands + cost:
+  - `bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/setup-extraction-venv.sh`
+    — local venv, ~150 MB, no sudo
+  - `brew install --cask dotnet-sdk` — .NET, ~1 GB, **sudo** (user-run via `!`)
   - Il2CppInspectorRedux: download `Il2CppInspectorRedux.CLI-osx-arm64.zip` from
     https://github.com/LukeFZ/Il2CppInspectorRedux/releases, unzip, export
-    `IL2CPP_INSPECTOR_CLI=<path>` (framework-dependent → needs dotnet above)
+    `IL2CPP_INSPECTOR_CLI=<path>`
   - `brew install ilspycmd` (mono decompile)
-  - AssetRipper: download from https://github.com/AssetRipper/AssetRipper/releases,
-    export `ASSETRIPPER_CLI=<path>` — GUI/web-server build; set `UNITY_ASSETS_MANUAL=1`
-    to defer asset extraction (see `unity-re-guide.md`)
 - then ask: **install now, or proceed limited?**
 
 Set `UNITY_TOOLS=full` if everything the user wants is present (or they just
 installed it), else `UNITY_TOOLS=limited:<reason>` (e.g.
-`limited:unity-no-dotnet`, `limited:unity-no-assetripper`). Pass `$UNITY` and
+`limited:unity-no-unitypy`, `limited:unity-no-dotnet`). Pass `$UNITY` and
 `$UNITY_TOOLS` to the Phase 2d subagent. Proceeding `limited:` is only valid once
 the user has acknowledged the cost.
 
@@ -175,21 +181,30 @@ Tell the subagent its clone-app scripts dir is
    - **Non-Unity (`none`):** run
      `python3 "$CA/extract-design.py" "$WORK/output" --package "$PKG" --out "$WORK/design-tokens.json" --digest "$WORK/design-digest.md"`
      per `design-capture-guide.md`.
-   - **Unity (`il2cpp`):** locate `libil2cpp.so` + `global-metadata.dat` under
-     `$WORK/output` (or unzip from `$APK`); run
-     `bash "$CA/il2cpp-dump.sh" <so> <metadata> "$WORK/unity-out"` and
-     `bash "$CA/unity-assets.sh" "$APK" "$WORK/game-assets"`; inventory
-     `$WORK/game-assets/` into `$WORK/game-assets/manifest.json` (a JSON list
-     of `{"path": ..., "type": ...}` entries for every extracted file); write
+   - **Unity (both `il2cpp` and `mono`) — content extraction, always run first:**
+     `bash "$CA/unity-assets.sh" "$APK" "$WORK/game-assets"`. It writes
+     `manifest.json` itself — do not hand-inventory the directory. Then
+     `python3 "$CA/gen-coverage-report.py" "$WORK/game-assets/manifest.json" --out "$WORK/coverage-report.md"`.
+     Read `$WORK/game-assets/IMPORT.md`, `manifest.json` and
+     `project-settings/README.md` — never the extracted files themselves.
+     The output contract is `unity-asset-extraction-guide.md`.
+   - **Unity (`il2cpp`) — type model:** locate `libil2cpp.so` +
+     `global-metadata.dat` under `$WORK/output` (or unzip from `$APK`); run
+     `bash "$CA/il2cpp-dump.sh" <so> <metadata> "$WORK/unity-out"`; write
      `$WORK/unity-digest.md` (type model + netcode) per `unity-re-guide.md`.
-   - **Unity (`mono`):** extract `assets/bin/Data/Managed/*.dll` from `$APK`
-     (for an XAPK, from the nested `base.apk`) into `$WORK/managed/`, then
-     `ilspycmd "$WORK/managed/Assembly-CSharp.dll" -o "$WORK/unity-out"`
-     (repeat for other DLLs of interest; near-source C#), plus
-     `bash "$CA/unity-assets.sh" "$APK" "$WORK/game-assets"`; inventory
-     `$WORK/game-assets/` into `$WORK/game-assets/manifest.json` (a JSON list
-     of `{"path": ..., "type": ...}` entries for every extracted file); write
+     Note that the C# **class inventory** is already in
+     `$WORK/game-assets/ARCHITECTURE.md` without any IL2CPP tooling.
+   - **Unity (`mono`) — type model:** extract `assets/bin/Data/Managed/*.dll`
+     from `$APK` (for an XAPK, from the nested `base.apk`) into `$WORK/managed/`,
+     then `ilspycmd "$WORK/managed/Assembly-CSharp.dll" -o "$WORK/unity-out"`
+     (repeat for other DLLs of interest; near-source C#); write
      `$WORK/unity-digest.md` per `unity-re-guide.md`.
+   - **Do not claim what was not extracted.** `manifest.json` notes and
+     `coverage-report.md` are the honest record; carry their gaps into the
+     digest instead of implying full coverage. In particular, only three things
+     are genuinely unrecoverable — MonoBehaviour/ScriptableObject field values,
+     shader HLSL, and IL2CPP method bodies. Anything else missing is a tooling
+     gap to report, not a limitation to assert.
    - If `$UNITY_TOOLS` is `limited:<reason>`, **skip the missing tool's step**
      (the user acknowledged the cost at the Phase 2c gate), write whatever is
      recoverable, and set `RE Method: $UNITY_TOOLS` (e.g.
@@ -205,8 +220,9 @@ Tell the subagent its clone-app scripts dir is
    and `$WORK/design-digest.md` (plus `$WORK/unity-digest.md` and
    `$WORK/game-assets/` when Unity).
 6. **Return** the contents of `$WORK/re-summary.txt` plus a short `design-summary`
-   (and `unity-summary` when Unity) and the digest file paths —
-   **never** raw decompiled sources, resources, or assets.
+   (and, when Unity, a `unity-summary` quoting the extracted per-type counts, the
+   entity count, the non-default engine settings, and the coverage gaps) and the
+   digest file paths — **never** raw decompiled sources, resources, or assets.
 
 If the subagent fails, retry once; if it still fails and the **direct-scripts**
 branch is available (i.e. the Phase 2a probe returned `RC == 0`), re-dispatch on
@@ -283,8 +299,10 @@ Include a **Backend API Surface** section: summarize the Tier-1 inventory from
 list, endpoint count, auth model, and the auth/payment/core request+response
 shapes). If RE Method was `limited:`, say so and note the reduced confidence.
 Also fill the **Design System** section from `$WORK/design-tokens.json` and
-`$WORK/design-digest.md` per `report-template.md`. For Unity apps, also fill
-the **Game Assets** section from `$WORK/unity-digest.md` per `report-template.md`.
+`$WORK/design-digest.md` per `report-template.md`. For game engines, also fill the **Game Content** section (§4b) from
+`$WORK/game-assets/manifest.json`, `coverage-report.md`, `IMPORT.md`,
+`levels/level-analysis.json`, `project-settings/README.md` and `shaders/README.md`
+per `report-template.md`.
 
 Write the report:
 ```
@@ -372,6 +390,9 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | writing-plans unavailable | write the plan as Markdown manually |
 | Unity build detected | run IL2CPP/Mono branch + AssetRipper |
 | Unity tool missing | Phase 2c gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
+| Extraction venv unavailable | `unity-assets.sh` exits 3 with install guidance — no game content is produced; surface this at the Phase 2c gate, never proceed silently |
+| `unity-assets.sh` exits 4 | extraction ran but produced no manifest — report as a failure, do not treat an empty `game-assets/` as coverage |
+| Entity has no mesh | check `geometry_status` in its `entity.json`: `builtin-primitive` / `procedural` / `external-reference` are findings, not failures |
 | No screenshots on Play | note it, rely on design-tokens + web image search |
 | Phase 7 = No | stop after feasibility report; skip the fidelity pass |
 | Fidelity subagent fails | retry once, then continue with partial artifacts and note the gap |

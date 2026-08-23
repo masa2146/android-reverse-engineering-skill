@@ -1,59 +1,94 @@
 #!/usr/bin/env bash
-# Extract Unity game assets (textures, sprites, audio, scenes, prefabs) from an
-# APK via AssetRipper. Only the tool-missing path + usage errors are exercised by
-# tests (test-unity-wrappers.sh).
+# Extract Unity game assets from an APK/XAPK — meshes, textures, sprites,
+# materials, shaders, particles, animations, audio, fonts, levels, scenes,
+# prefab structure and project settings — grouped per entity and ready to
+# import. See references/unity-asset-extraction-guide.md for the output contract.
 #
-# REALITY (verified against AssetRipper 1.3.14, "AssetRipper.GUI.Free", 2026-07):
-# the current release is a WEB-SERVER GUI, not a console converter. Its flags are
-# --headless / --port / --log — there is NO one-shot `<input> -o <out>` mode, and
-# the web API it serves has no discoverable, stable spec (Swagger shell loads but
-# the OpenAPI JSON is absent; /api/* guesses 404). Driving it blind is not robust,
-# so this wrapper does NOT fake a conversion. Instead it:
-#   - exits 3 with install guidance if the binary is absent, or
-#   - if the binary is present, either guides the user to run the GUI manually, or
-#     (with UNITY_ASSETS_MANUAL=1) records a "manual export needed" marker and
-#     exits 0 so the pipeline can degrade gracefully.
+# The engine is unity-extract.py running under the opt-in extraction venv
+# (UnityPy + numpy + Pillow). This replaces the old AssetRipper path: the current
+# AssetRipper release is a web-server GUI with no one-shot CLI, so it could never
+# extract anything unattended. It stays available as an optional supplement via
+# ASSETRIPPER_CLI, never as a prerequisite.
+#
+# Exit codes: 0 success · 2 usage · 3 venv/UnityPy unavailable · 4 extraction failed.
 set -uo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
 
 APK="${1:-}"; OUT="${2:-}"
 if [[ -z "$APK" || -z "$OUT" ]]; then
-  echo "ERROR: usage: unity-assets.sh <apk> <out-dir>" >&2
+  echo "ERROR: usage: unity-assets.sh <apk-or-xapk> <out-dir>" >&2
+  exit 2
+fi
+if [[ ! -e "$APK" ]]; then
+  echo "ERROR: package not found: $APK" >&2
   exit 2
 fi
 
-BIN="${ASSETRIPPER_CLI:-AssetRipper}"
-if ! command -v "$BIN" >/dev/null 2>&1; then
+# Resolve a python that has UnityPy: an explicit override, the extraction venv,
+# or build the venv now.
+PY="${CLONE_APP_EXTRACTION_PYTHON:-}"
+if [[ -z "$PY" ]]; then
+  VENV="${EXTRACTION_VENV:-$HERE/../.venv-extraction}"
+  if [[ -x "$VENV/bin/python" ]]; then
+    PY="$VENV/bin/python"
+  else
+    echo "INFO: extraction venv missing — creating it (UnityPy, numpy, Pillow)…" >&2
+    if VENV_PATH="$(bash "$HERE/setup-extraction-venv.sh" 2>/dev/null)"; then
+      PY="$VENV_PATH/bin/python"
+    fi
+  fi
+fi
+
+if [[ -z "$PY" ]] || ! "$PY" -c "import UnityPy" >/dev/null 2>&1; then
   cat >&2 <<'EOF'
-ERROR: AssetRipper CLI not found.
-Install it (needs the .NET runtime): https://github.com/AssetRipper/AssetRipper
-Put the binary on PATH, or set ASSETRIPPER_CLI=/path/to/AssetRipper.GUI.Free.
+ERROR: UnityPy is not available, so no assets can be extracted.
+Create the opt-in extraction venv:
+    bash skills/clone-app/scripts/setup-extraction-venv.sh
+It installs UnityPy (assets), numpy + Pillow (mesh previews) into
+skills/clone-app/.venv-extraction — nothing is added to the system python.
+Offline? Point CLONE_APP_EXTRACTION_PYTHON at a python that already has UnityPy.
+AssetRipper is NOT required; it is an optional supplement only.
 EOF
   exit 3
 fi
 
 mkdir -p "$OUT"
 
-# AssetRipper GUI.Free is a web-server app with no one-shot CLI conversion. We do
-# not fake a conversion. Either the user runs the GUI, or opts into manual-defer.
-if [[ "${UNITY_ASSETS_MANUAL:-0}" == "1" ]]; then
-  cat > "$OUT/manual-export-needed.md" <<EOF
-# AssetRipper export deferred (manual)
-AssetRipper GUI.Free is a web-server app with no one-shot CLI. To extract assets:
-  1. Run: $BIN
-  2. Open the printed URL in a browser
-  3. Load: $APK
-  4. Export to: $OUT
-Source APK: $APK
-EOF
-  echo "DEFERRED: AssetRipper GUI run needed; marker at $OUT/manual-export-needed.md"
-  exit 0
+EXTRA_ARGS=()
+[[ "${UNITY_ASSETS_NO_PREVIEWS:-0}" == "1" ]] && EXTRA_ARGS+=(--no-previews)
+[[ -n "${UNITY_ASSETS_WORK:-}" ]] && EXTRA_ARGS+=(--work "$UNITY_ASSETS_WORK")
+
+"$PY" "$HERE/unity-extract.py" "$APK" --out "$OUT" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+rc=$?
+if [[ "$rc" -eq 3 ]]; then
+  echo "ERROR: UnityPy import failed inside the extraction venv." >&2
+  exit 3
+fi
+if [[ "$rc" -ne 0 ]]; then
+  echo "ERROR: unity-extract.py failed (exit $rc)." >&2
+  exit 4
 fi
 
-cat >&2 <<EOF
-ERROR: AssetRipper GUI.Free (current release) is a web-server app, not a console
-converter — no one-shot '<input> -o <out>' mode, and its web API is not documented
-enough to drive. This wrapper will not fake an extraction. Either:
-  (a) run the GUI manually:  $BIN   # then load $APK, export to $OUT
-  (b) re-run with UNITY_ASSETS_MANUAL=1 to defer (writes a marker, exits 0)
+if [[ ! -s "$OUT/manifest.json" ]]; then
+  echo "ERROR: extraction produced no manifest.json — treating as failure." >&2
+  exit 4
+fi
+
+# Optional supplement: AssetRipper can add scene/shader reconstruction UnityPy
+# does not attempt. Never required, never fabricated.
+BIN="${ASSETRIPPER_CLI:-}"
+if [[ -n "$BIN" ]] && command -v "$BIN" >/dev/null 2>&1; then
+  cat > "$OUT/assetripper-supplement.md" <<EOF
+# Optional AssetRipper supplement
+UnityPy extraction already completed (see manifest.json). AssetRipper is present
+at: $BIN
+Its current release is a web-server GUI with no one-shot CLI, so run it by hand
+if you want its scene/shader reconstruction on top of this extraction:
+  1. $BIN
+  2. open the printed URL, load: $APK
+  3. export alongside: $OUT
 EOF
-exit 4
+fi
+
+echo "$OUT"
