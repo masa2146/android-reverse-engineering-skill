@@ -188,12 +188,20 @@ Tell the subagent its clone-app scripts dir is
      Read `$WORK/game-assets/IMPORT.md`, `manifest.json` and
      `project-settings/README.md` — never the extracted files themselves.
      The output contract is `unity-asset-extraction-guide.md`.
-   - **Unity (`il2cpp`) — type model:** locate `libil2cpp.so` +
-     `global-metadata.dat` under `$WORK/output` (or unzip from `$APK`); run
-     `bash "$CA/il2cpp-dump.sh" <so> <metadata> "$WORK/unity-out"`; write
+   - **Unity (`il2cpp`) — API surface, always run, needs no .NET:** locate
+     `global-metadata.dat` (under `$WORK/output` or unzipped from `$APK`) and run
+     `python3 "$CA/il2cpp-metadata-dump.py" <metadata> --out "$WORK/api-surface.json" --markdown "$WORK/api-surface.md"`.
+     This recovers **every type, field, property and method name** in the game
+     assemblies — the skeleton of every system — with the stdlib alone. It is the
+     single highest-value artifact for reconstructing mechanics: read
+     `api-surface.md` for the game assemblies (`Core`, `Assembly-CSharp`,
+     `<Game>.*`) and cite it in the digest.
+   - **Unity (`il2cpp`) — optional deeper type model:** if `dotnet` +
+     `Il2CppInspector` are present, also run
+     `bash "$CA/il2cpp-dump.sh" <so> <metadata> "$WORK/unity-out"` for field/enum
+     *types* (the metadata dump gives names, not resolved types). Write
      `$WORK/unity-digest.md` (type model + netcode) per `unity-re-guide.md`.
-     Note that the C# **class inventory** is already in
-     `$WORK/game-assets/ARCHITECTURE.md` without any IL2CPP tooling.
+     Method **bodies** remain unrecoverable either way.
    - **Unity (`mono`) — type model:** extract `assets/bin/Data/Managed/*.dll`
      from `$APK` (for an XAPK, from the nested `base.apk`) into `$WORK/managed/`,
      then `ilspycmd "$WORK/managed/Assembly-CSharp.dll" -o "$WORK/unity-out"`
@@ -388,7 +396,7 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | Play scrape returns nulls | web-search fallback, note source |
 | Heavy obfuscation | add uncertainty band, note in report |
 | writing-plans unavailable | write the plan as Markdown manually |
-| Unity build detected | run IL2CPP/Mono branch + AssetRipper |
+| Unity build detected | run the content extraction, then the IL2CPP metadata dump (no .NET needed) |
 | Unity tool missing | Phase 2c gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
 | Extraction venv unavailable | `unity-assets.sh` exits 3 with install guidance — no game content is produced; surface this at the Phase 2c gate, never proceed silently |
 | `unity-assets.sh` exits 4 | extraction ran but produced no manifest — report as a failure, do not treat an empty `game-assets/` as coverage |

@@ -17,6 +17,28 @@ the runtime first: `brew install --cask dotnet-sdk` (sudo), then download
 serialized fields, network/RPC type shapes → data model + feature inventory.
 **Not recoverable:** C# method *bodies* (compiled to native ARM in the .so).
 
+### The zero-dependency path — `il2cpp-metadata-dump.py`
+
+Before reaching for .NET tooling, run
+
+```bash
+python3 il2cpp-metadata-dump.py <global-metadata.dat> \
+        --out api-surface.json --markdown api-surface.md [--assemblies Core,Assembly-CSharp]
+```
+
+Stdlib only, seconds to run, no `dotnet` and no `libil2cpp.so`. It locates the
+type / field / method / property / image tables **by validating candidates**
+rather than hardcoding a per-version layout, then dumps every **name**: each
+class with its fields, properties and methods, grouped by assembly and namespace.
+
+That is the reconstruction skeleton — it tells you what each manager owns and
+what it can do (e.g. `BallController` really has `InitialSpeed`,
+`AimContactOffset`, `TryBeginTouchAim`, `LaunchBall`, `ConsumeBall`). What it
+cannot give you is the *value* in a field or the *arithmetic* in a method body.
+
+`Il2CppInspector` remains useful for resolved field **types**; it is an upgrade,
+not a prerequisite.
+
 ## Mono (`detect-unity.sh` → `mono`)
 
 Inputs: `assets/bin/Data/Managed/*.dll` (real .NET assemblies). Decompile to

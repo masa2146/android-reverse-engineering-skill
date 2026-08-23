@@ -13,7 +13,7 @@ must_exist "$P/README.md"
 for s in extract-package.sh download-apk.sh resolve-re-scripts.sh detect-unity.sh il2cpp-dump.sh unity-assets.sh detect-engine.sh setup-extraction-venv.sh; do
   must_exist "$P/skills/clone-app/scripts/$s"; must_exec "$P/skills/clone-app/scripts/$s"
 done
-for s in scrape-play-store.py check-appstore.py extract-design.py extract-logic.py extract-nav-graph.py gen-coverage-report.py unity-extract.py render-mesh-preview.py; do
+for s in scrape-play-store.py check-appstore.py extract-design.py extract-logic.py extract-nav-graph.py gen-coverage-report.py unity-extract.py render-mesh-preview.py il2cpp-metadata-dump.py; do
   must_exist "$P/skills/clone-app/scripts/$s"
 done
 for r in stack-recommendation-guide effort-estimation-guide infra-cost-guide report-template re-digest-contract design-capture-guide unity-re-guide unity-asset-extraction-guide clone-build-spec-template fidelity-pass-guide logic-capture-guide backend-recon-guide; do
