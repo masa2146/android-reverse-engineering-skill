@@ -1,1 +1,5 @@
-UnityPy>=1.20
+# Opt-in extraction venv (setup-extraction-venv.sh). Nothing here is installed
+# into the system python; the shipped core scripts and tests stay stdlib-only.
+UnityPy>=1.20      # Unity serialized-file reader — assets, prefabs, settings
+numpy>=1.24        # mesh preview rasteriser
+Pillow>=10.0       # PNG decode/encode, contact sheets

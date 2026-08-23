@@ -65,7 +65,7 @@ Shell is zsh but every script uses `#!/usr/bin/env bash` — invoke with `bash <
 clone-app never hardcodes RE script paths. It calls `resolve-re-scripts.sh`, which from `plugins/clone-app/` walks to `plugins/android-reverse-engineering/skills/android-reverse-engineering/scripts/` (honoring `$CLAUDE_PLUGIN_ROOT`, falling back to deriving its own location). Phase 2 then invokes that dir's `fingerprint.sh`, `check-deps.sh`, `decompile.sh -o "$WORK/output"`, `recover-kotlin-names.sh`, `find-api-calls.sh`.
 
 Two runtime conventions the scripts and SKILL.md share:
-- **Working dir** is `./work/{package}/` relative to the user's cwd (never inside the plugin). Decompile output must land at `$WORK/output/` via `decompile.sh -o` — `decompile.sh` otherwise defaults to a relative `<basename>-decompiled` dir in cwd.
+- **Working dir** is `./work/{package}/` relative to the user's cwd (never inside the plugin), created by `init-workdir.sh` with three layers: `deliverables/` (reports, build spec, reconstruction — written for a person), `extracted/` (clean data: game assets, API surface, RE digests, `store/`), `raw/` (package, decompiled sources, unpack scratch — regenerable). Decompile output must land at `$WORK/raw/decompiled/` via `decompile.sh -o` — `decompile.sh` otherwise defaults to a relative `<basename>-decompiled` dir in cwd. Nothing in `raw/` is deleted automatically; `clean-workdir.sh` is the user's call. `migrate-workdir.sh` converts a pre-layout flat working dir.
 - **Effort is measured in "AI Sprints"** (one focused Claude session, ~2–4h review), never calendar time.
 
 SKILL.md pauses for the user at exactly two points: Phase 4 (choose clone stack) and Phase 7 (proceed to implementation plan?). Phase 7's "yes" path invokes `superpowers:writing-plans`.

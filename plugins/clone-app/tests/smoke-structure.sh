@@ -10,17 +10,20 @@ must_exist "$P/.claude-plugin/plugin.json"
 must_exist "$P/skills/clone-app/SKILL.md"
 must_exist "$P/commands/clone-app.md"
 must_exist "$P/README.md"
-for s in extract-package.sh download-apk.sh resolve-re-scripts.sh detect-unity.sh il2cpp-dump.sh unity-assets.sh detect-engine.sh setup-extraction-venv.sh; do
+for s in extract-package.sh download-apk.sh resolve-re-scripts.sh detect-unity.sh il2cpp-dump.sh unity-assets.sh detect-engine.sh setup-extraction-venv.sh init-workdir.sh clean-workdir.sh migrate-workdir.sh; do
   must_exist "$P/skills/clone-app/scripts/$s"; must_exec "$P/skills/clone-app/scripts/$s"
 done
-for s in scrape-play-store.py check-appstore.py extract-design.py extract-logic.py extract-nav-graph.py gen-coverage-report.py; do
+for s in scrape-play-store.py check-appstore.py extract-design.py extract-logic.py extract-nav-graph.py gen-coverage-report.py unity-extract.py render-mesh-preview.py il2cpp-metadata-dump.py; do
   must_exist "$P/skills/clone-app/scripts/$s"
 done
-for r in stack-recommendation-guide effort-estimation-guide infra-cost-guide report-template re-digest-contract design-capture-guide unity-re-guide clone-build-spec-template fidelity-pass-guide logic-capture-guide backend-recon-guide; do
+for r in stack-recommendation-guide effort-estimation-guide infra-cost-guide report-template re-digest-contract design-capture-guide unity-re-guide unity-asset-extraction-guide game-reconstruction-guide clone-build-spec-template fidelity-pass-guide logic-capture-guide backend-recon-guide; do
   must_exist "$P/skills/clone-app/references/$r.md"
 done
 must_exist "$P/skills/clone-app/scripts/requirements-extraction.txt"
 must_exist "$P/skills/clone-app/references/engines/module-contract.md"
+must_exist "$P/skills/clone-app/scripts/templates/ImportExtracted.cs"
+must_exist "$P/tests/fixtures/unity-sample/cube.obj"
+must_exist "$P/tests/fixtures/unity-sample/level-001-a.json"
 
 # JSON validity
 python3 -c "import json;json.load(open('$P/.claude-plugin/plugin.json'));json.load(open('$ROOT/.claude-plugin/marketplace.json'))" \

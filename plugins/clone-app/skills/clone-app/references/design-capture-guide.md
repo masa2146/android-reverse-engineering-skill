@@ -7,7 +7,7 @@ Two sources, always combined:
    `design-tokens.json` + `design-digest.md`. Real colors, dimens, theme,
    fonts, layout inventory, launcher icon.
 2. **Play Store screenshots** (`scrape-play-store.py` → `screenshot_urls`,
-   downloaded to `$WORK/screenshots/`). The visual ground truth for layout,
+   downloaded to `$WORK/extracted/store/screenshots/`). The visual ground truth for layout,
    composition, and anything not in res.
 
 ## Framework-aware reading (confidence)

@@ -55,6 +55,74 @@ git pull upstream master
 The clone-app plugin lives in its own directory, so upstream updates to
 `android-reverse-engineering` merge cleanly.
 
+## Working directory layout
+
+`init-workdir.sh` creates `work/<package>/` with three layers, split by what you
+do with them:
+
+```
+deliverables/   reports, build spec, reconstruction package — written for a person
+extracted/      clean data a machine reads: game-assets/, api-surface, RE digests, store/
+raw/            package, decompiled sources, unpack scratch — regenerable, delete when done
+README.md       the map: what is where, in what order to read it
+```
+
+Nothing in `raw/` is removed automatically — Phases 8 and 9 read back from it.
+`clean-workdir.sh <workdir>` clears it on request and reports what it freed;
+`migrate-workdir.sh <workdir>` converts an older flat directory, moving rather
+than deleting and reporting anything it did not recognise.
+
+
+## Game reconstruction (Phase 9, on request)
+
+For a game, the deepest output is a reconstruction package under
+`work/<pkg>/reconstruction/`: the service architecture, every gameplay mechanic
+with its real field and method names, a stage-by-stage runtime flow naming the
+animation, VFX and sound that fires at each beat, the economy/meta/LiveOps
+design, an honest unknowns ledger, and a compiling code skeleton whose constants
+are either measured (`// [D]`) or explicitly open (`// TODO tune`).
+
+It is driven by `references/game-reconstruction-guide.md` and runs in a
+subagent — the recovered API surface is several megabytes and must never enter
+the orchestrator's context.
+
+Extraction and the metadata dump are **deterministic**: rerunning them on the
+same package produces a byte-identical tree. The reconstruction documents are
+authored, so wording varies; the file set, section structure, evidence tags and
+every factual claim do not.
+
+## Game content extraction (Unity)
+
+When Phase 2 detects a Unity build, `unity-assets.sh` runs `unity-extract.py`
+under an opt-in venv (UnityPy + numpy + Pillow) and extracts the game's content
+into `work/<pkg>/game-assets/` — **grouped by the object it belongs to**, not
+dumped flat:
+
+- `entities/<Name>/` — one self-contained folder per game object: model, its
+  pre-modelled fracture pieces, its textures, its material values, colliders,
+  joints, rigidbody, animations, particle systems, a rendered `preview.png`, a
+  machine-readable `entity.json` rebuild recipe and a human `README.md`.
+- shared pools for cross-cutting assets: `textures/`, `sprites/` (with pivot,
+  pixels-per-unit and 9-slice metadata), `audio/`, real `fonts/` (TTF/OTF),
+  `levels/` (plus a derived mechanic-introduction curve and A/B ladder
+  detection), `spine/`, `text/`.
+- engine-wide capture: `materials.json`, `physics.json`, `shaders/` (real names
+  and full property tables, grouped buy-vs-re-author), `particles/` (every
+  module), `animations/` (clips + controllers), `ui/` (canvases and
+  RectTransform trees), `scenes/`, `project-settings/` (with a README naming
+  every value that differs from Unity's defaults), `ARCHITECTURE.md`.
+- `unity-import/ImportExtracted.cs` — a Unity Editor script that rebuilds each
+  entity as a prefab with its colliders, rigidbody and joints applied.
+- `IMPORT.md` — what is directly usable, what was decoded from a lossy format,
+  what needs re-authoring, and which importer flags to set by hand.
+
+Only three things are genuinely unrecoverable from an IL2CPP release build:
+MonoBehaviour/ScriptableObject **field values**, shader **HLSL**, and C#
+**method bodies**. Everything else — including full prefab structure — comes
+out. See `skills/clone-app/references/unity-asset-extraction-guide.md`.
+
+Extracted art is reference material; the transferable output is the structure.
+
 ## Legal
 For lawful use only — your own apps, authorized interoperability, security
 research, or education. You are responsible for compliance.

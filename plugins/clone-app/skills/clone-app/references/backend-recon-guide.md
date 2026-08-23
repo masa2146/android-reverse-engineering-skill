@@ -7,8 +7,8 @@ confidence-stamped.
 
 ## Input
 
-`$WORK/payloads.json` (deepened to full Tier-2 in the fidelity pass) +
-`$WORK/re-digest.md` (hosts, auth model, BuildConfig).
+`$WORK/extracted/payloads.json` (deepened to full Tier-2 in the fidelity pass) +
+`$WORK/extracted/re-digest.md` (hosts, auth model, BuildConfig).
 
 ## `backend-recon.md` sections
 
