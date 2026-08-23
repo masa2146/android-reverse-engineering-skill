@@ -12,15 +12,15 @@ phase turns them into something a developer can build from.
 
 | Artifact | Size on a real game | How to use it |
 |---|---|---|
-| `$WORK/api-surface.json` / `.md` | **4–10 MB** | **NEVER read whole.** Query it (recipes below). |
-| `$WORK/game-assets/manifest.json` | small | read fully |
-| `$WORK/game-assets/entities/_index.json` | medium | read fully or filter |
-| `$WORK/game-assets/levels/level-analysis.json` | small–medium | read fully |
-| `$WORK/game-assets/physics.json`, `project-settings/README.md` | small | read fully |
-| `$WORK/game-assets/scenes/*.tree.txt` | 40 KB+ each | grep for canvases/managers, or read one |
-| `$WORK/game-assets/ARCHITECTURE.md` | medium | read fully |
-| `$WORK/game-assets/shaders/README.md`, `IMPORT.md` | small | read fully |
-| `$WORK/re-digest.md`, `payloads.json` | small | read fully |
+| `$WORK/extracted/api-surface.json` / `.md` | **4–10 MB** | **NEVER read whole.** Query it (recipes below). |
+| `$WORK/extracted/game-assets/manifest.json` | small | read fully |
+| `$WORK/extracted/game-assets/entities/_index.json` | medium | read fully or filter |
+| `$WORK/extracted/game-assets/levels/level-analysis.json` | small–medium | read fully |
+| `$WORK/extracted/game-assets/physics.json`, `project-settings/README.md` | small | read fully |
+| `$WORK/extracted/game-assets/scenes/*.tree.txt` | 40 KB+ each | grep for canvases/managers, or read one |
+| `$WORK/extracted/game-assets/ARCHITECTURE.md` | medium | read fully |
+| `$WORK/extracted/game-assets/shaders/README.md`, `IMPORT.md` | small | read fully |
+| `$WORK/extracted/re-digest.md`, `payloads.json` | small | read fully |
 | audio / particles / animator listings | — | `ls` them, do not read the JSON |
 
 ### Query recipes (use these, they are what worked)
@@ -29,7 +29,7 @@ phase turns them into something a developer can build from.
 # every class in the game assemblies, with fields and methods
 python3 - <<'PY'
 import json
-d = json.load(open("$WORK/api-surface.json"))["assemblies"]
+d = json.load(open("$WORK/extracted/api-surface.json"))["assemblies"]
 core = d.get("Core.dll") or d.get("Assembly-CSharp.dll") or {}
 for name in sorted(core):
     e = core[name]
@@ -39,7 +39,7 @@ PY
 # one subsystem at a time — this is the main working loop
 python3 - <<'PY'
 import json
-c = json.load(open("$WORK/api-surface.json"))["assemblies"]["Core.dll"]
+c = json.load(open("$WORK/extracted/api-surface.json"))["assemblies"]["Core.dll"]
 for n in ["Core.BallController", "Core.LevelController", "Core.Obstacle"]:
     e = c.get(n)
     if e: print(n, "\n F:", e["fields"], "\n M:", e["methods"], "\n P:", e["properties"], "\n")
@@ -47,7 +47,7 @@ PY
 
 # which assemblies exist and how big each is
 python3 -c "
-import json;d=json.load(open('$WORK/api-surface.json'))['assemblies']
+import json;d=json.load(open('$WORK/extracted/api-surface.json'))['assemblies']
 print(sorted(((len(v),k) for k,v in d.items()), reverse=True)[:15])"
 ```
 
@@ -78,7 +78,7 @@ plausible one and present it as recovered.
 ## Output structure
 
 ```
-$WORK/reconstruction/
+$WORK/deliverables/reconstruction/
   README.md                  index + evidence legend + the hard limit
   01-ARCHITECTURE.md         services, scenes, data flow, persistence, analytics
   02-GAMEPLAY-MECHANICS.md   core loop, every element, win/lose resolution

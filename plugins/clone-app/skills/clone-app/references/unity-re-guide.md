@@ -110,7 +110,7 @@ its exact values. Only the custom script field values are missing. Never write
 `Assets/Editor/`, run **Tools → Clone App → Import Extracted Assets**, and it
 rebuilds prefabs with meshes, materials, colliders, rigidbody and joints applied.
 
-For layout reference the Play screenshots in `$WORK/screenshots/` still help,
+For layout reference the Play screenshots in `$WORK/extracted/store/screenshots/` still help,
 but they are no longer the primary source — the extracted `ui/` trees are.
 
 ## Dependency gate (Phase 2c) vs graceful degradation
@@ -134,7 +134,7 @@ style — do not ship them.
 
 ## Game mechanics & formulas (fidelity pass)
 
-In the Phase 8 fidelity pass, deepen `$WORK/unity-digest.md` beyond the type
+In the Phase 8 fidelity pass, deepen `$WORK/extracted/unity-digest.md` beyond the type
 model + netcode to capture the playable rules:
 
 - **Game mechanics** — core loop, win/lose conditions, level/wave progression,

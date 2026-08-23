@@ -57,6 +57,8 @@ mkdir -p "$OUT"
 
 EXTRA_ARGS=()
 [[ "${UNITY_ASSETS_NO_PREVIEWS:-0}" == "1" ]] && EXTRA_ARGS+=(--no-previews)
+# Scratch goes in the workdir's raw/ layer when <out> sits under one; the
+# extractor works this out itself, UNITY_ASSETS_WORK only overrides it.
 [[ -n "${UNITY_ASSETS_WORK:-}" ]] && EXTRA_ARGS+=(--work "$UNITY_ASSETS_WORK")
 
 "$PY" "$HERE/unity-extract.py" "$APK" --out "$OUT" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"

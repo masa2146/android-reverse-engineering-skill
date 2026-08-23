@@ -29,13 +29,13 @@
 ## 4a. Design System (Detected)
 - Palette: {key colors} · Type: {fonts + scale} · Theme: {light/dark}
 - Confidence: {high/med/low} (source: APK res + {n} Play screenshots)
-- Full tokens: `$WORK/design-tokens.json`; screenshots: `$WORK/screenshots/`
+- Full tokens: `$WORK/extracted/design-tokens.json`; screenshots: `$WORK/extracted/store/screenshots/`
 
 ## 4b. Game Content (if a game engine was detected)
-Source: `$WORK/game-assets/` — see its `manifest.json`, `coverage-report.md` and
+Source: `$WORK/extracted/game-assets/` — see its `manifest.json`, `coverage-report.md` and
 `IMPORT.md`. Omit this section entirely for non-game apps.
 
-- **Build type:** {il2cpp/mono} · Type model: `$WORK/unity-digest.md`
+- **Build type:** {il2cpp/mono} · Type model: `$WORK/extracted/unity-digest.md`
 - **Extracted:** {n} entities · {n} meshes ({n} fracture pieces) · {n} textures
   ({n} lossless / {n} decoded from compressed) · {n} sprites ({n} with 9-slice
   borders) · {n} materials · {n} shaders · {n} particle systems ·

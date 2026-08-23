@@ -2067,6 +2067,19 @@ def copy_unity_importer(out):
     return dst
 
 
+def default_scratch_dir(out_dir):
+    """Put unpack scratch in the workdir's raw/ layer when there is one.
+
+    A standard workdir is <pkg>/{deliverables,extracted,raw}; extraction writes
+    to <pkg>/extracted/game-assets, so scratch belongs at <pkg>/raw/unity-work.
+    Outside that shape, fall back to a sibling of the output dir.
+    """
+    parent = os.path.dirname(os.path.abspath(out_dir))
+    if os.path.basename(parent) == "extracted":
+        return os.path.join(os.path.dirname(parent), "raw", "unity-work")
+    return os.path.join(parent, "unity-work")
+
+
 def count_package_entries(pkg_path):
     """`expected` for the coverage manifest: archive entries in the package."""
     if os.path.isdir(pkg_path):
@@ -2096,20 +2109,24 @@ def main(argv=None):
                     "ready to import.")
     ap.add_argument("package", help="path to .apk / .xapk / already-unpacked dir")
     ap.add_argument("--out", required=True, help="game-assets output dir")
-    ap.add_argument("--work", help="scratch dir for unpacking (default <out>/../_unity-work)")
+    ap.add_argument("--work",
+                    help="scratch dir for unpacking. Defaults to <workdir>/raw/unity-work "
+                         "when --out sits under a standard workdir, else <out>/../unity-work")
     ap.add_argument("--engine", default="unity", help="engine label for the manifest")
     ap.add_argument("--no-previews", action="store_true", help="skip mesh rendering")
     ap.add_argument("--max-entities", type=int, default=2000,
                     help="cap on grouped entity folders (0 = no cap); any drop is "
                          "recorded in the manifest notes, never silent")
-    ap.add_argument("--keep-work", action="store_true", help="keep the unpack scratch dir")
+    ap.add_argument("--keep-work", action="store_true",
+                    help="deprecated: scratch is always kept (nothing is deleted "
+                         "automatically; use clean-workdir.sh)")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
     verbose = not args.quiet
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
-    work = os.path.abspath(args.work or os.path.join(out, os.pardir, "_unity-work"))
+    work = os.path.abspath(args.work or default_scratch_dir(out))
     os.makedirs(work, exist_ok=True)
 
     def log(m):
@@ -2224,8 +2241,8 @@ def main(argv=None):
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1, ensure_ascii=False, default=str)
 
-    if not args.keep_work:
-        shutil.rmtree(os.path.join(work, "split"), ignore_errors=True)
+    # Nothing is deleted automatically: later phases read back from the
+    # unpacked tree, and removal is the user's call via clean-workdir.sh.
 
     log("\nEXTRACTED: " + ", ".join(f"{k}={v}" for k, v in sorted(x.counts.items())))
     if x.errors:

@@ -55,6 +55,24 @@ git pull upstream master
 The clone-app plugin lives in its own directory, so upstream updates to
 `android-reverse-engineering` merge cleanly.
 
+## Working directory layout
+
+`init-workdir.sh` creates `work/<package>/` with three layers, split by what you
+do with them:
+
+```
+deliverables/   reports, build spec, reconstruction package — written for a person
+extracted/      clean data a machine reads: game-assets/, api-surface, RE digests, store/
+raw/            package, decompiled sources, unpack scratch — regenerable, delete when done
+README.md       the map: what is where, in what order to read it
+```
+
+Nothing in `raw/` is removed automatically — Phases 8 and 9 read back from it.
+`clean-workdir.sh <workdir>` clears it on request and reports what it freed;
+`migrate-workdir.sh <workdir>` converts an older flat directory, moving rather
+than deleting and reporting anything it did not recognise.
+
+
 ## Game reconstruction (Phase 9, on request)
 
 For a game, the deepest output is a reconstruction package under
