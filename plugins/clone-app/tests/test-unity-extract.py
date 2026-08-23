@@ -147,7 +147,7 @@ check("schema keys captured", "MoveCount" in an["schema_keys"])
 def agg(**kw):
     base = {"meshes": [], "broken_pieces": [], "external_meshes": [], "sprites": [],
             "scripts": [], "materials": {}, "colliders": [], "joints": [],
-            "particles": []}
+            "particles": [], "particle_owners": [], "renderers": []}
     base.update(kw)
     return base
 
@@ -160,6 +160,12 @@ check("procedural status",
       ux._geometry_status(agg(scripts=["TubeMeshGenerator"])) == "procedural")
 check("sprite status", ux._geometry_status(agg(sprites=["s"])) == "sprite-based")
 check("empty status", ux._geometry_status(agg()) == "empty")
+check("vfx prefab labelled particle-effect",
+      ux._geometry_status(agg(particles=["a.json"],
+                              renderers=["ParticleSystemRenderer"])) == "particle-effect")
+check("mesh wins over particles",
+      ux._geometry_status(agg(meshes=["m"], particles=["a.json"],
+                              renderers=["MeshRenderer"])) == "extracted")
 
 # --- pruning ----------------------------------------------------------------
 kept, dropped = ux.prune_entities(

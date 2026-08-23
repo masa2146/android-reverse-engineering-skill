@@ -67,6 +67,11 @@ UI_NOISE_RE = re.compile(
 
 SAFE_RE = re.compile(r"[^\w\-.() ]")
 
+# TextAssets that are level definitions. Numeric names are the most common
+# convention; the prefixed forms cover the rest. A game that stores levels as
+# ScriptableObjects instead is a genuine miss and is reported as such.
+LEVEL_NAME_RE = re.compile(r"^(?:level|stage|map|puzzle|lvl|chapter)[\s_\-]*(\d+)$", re.I)
+
 # Shader families we can name a source for, so the report can say buy-vs-reauthor.
 KNOWN_SHADER_VENDORS = (
     ("Toony Colors Pro", "commercial", "Toony Colors Pro 2 (Unity Asset Store)"),
@@ -103,6 +108,16 @@ def split_groups(filenames):
         if m:
             groups[m.group(1)].append((int(m.group(2)), f))
     return {base: [n for _, n in sorted(parts)] for base, parts in groups.items()}
+
+
+def level_index(stem):
+    """Level number for a TextAsset name, or None if it is not level data."""
+    if not stem:
+        return None
+    if stem.isdigit():
+        return int(stem)
+    m = LEVEL_NAME_RE.match(stem)
+    return int(m.group(1)) if m else None
 
 
 def classify_mesh(mesh_name):
@@ -697,12 +712,13 @@ class Extractor:
                    if isinstance(script, str) else bytes(script or b""))
             name = t.m_Name or f"text_{o.path_id}"
             stem = name[:-5] if name.lower().endswith(".json") else name
-            if stem.isdigit():
+            level_no = level_index(stem)
+            if level_no is not None:
                 path = self.alloc.path(levels_dir, name if name.endswith(".json")
                                        else name + ".json")
                 self.counts["levels"] += 1
                 try:
-                    levels[int(stem)].append(json.loads(raw.decode("utf-8", "replace")))
+                    levels[level_no].append(json.loads(raw.decode("utf-8", "replace")))
                 except Exception:
                     self.errors["level:parse"] += 1
             elif name.endswith((".skel", ".atlas")) or "skel" in name.lower():
@@ -1277,6 +1293,57 @@ class Extractor:
         with open(os.path.join(d, f"{fname}.objects.json"), "w") as f:
             json.dump(payload, f, indent=1, ensure_ascii=False, default=str)
 
+    # -- structural entity discovery ---------------------------------------
+    def discover_prefab_roots(self, max_depth=4):
+        """Root GameObjects that carry renderable content — engine-level, so it
+        works for any game regardless of naming conventions.
+
+        A prefab asset is a transform hierarchy whose root has no parent and
+        which lives outside a scene file. Name-based discovery cannot find these
+        when a game exports meshes as `BezierCurve.041`; this can.
+        """
+        parented, trs = set(), {}
+        for o in self.objects:
+            if o.type.name not in ("Transform", "RectTransform"):
+                continue
+            t = _read(o)
+            if t is None:
+                continue
+            try:
+                fname = os.path.basename(o.assets_file.name or "?")
+            except Exception:
+                fname = "?"
+            trs[(fname, o.path_id)] = (t, fname)
+            for ch in getattr(t, "m_Children", None) or []:
+                try:
+                    parented.add((fname, ch.path_id))
+                except Exception:
+                    pass
+
+        content = ("MeshFilter", "SkinnedMeshRenderer", "SpriteRenderer",
+                   "MeshRenderer", "ParticleSystem", "TrailRenderer", "LineRenderer")
+
+        def bears_content(go, depth=0):
+            if depth > max_depth:
+                return False
+            for c in _components(go):
+                if type(c).__name__ in content:
+                    return True
+            for ch in _children(go):
+                if bears_content(ch, depth + 1):
+                    return True
+            return False
+
+        prefabs, scene_roots = set(), set()
+        for key, (t, fname) in trs.items():
+            if key in parented:
+                continue
+            g = _deref(getattr(t, "m_GameObject", None))
+            if g is None or not g.m_Name or not bears_content(g):
+                continue
+            (scene_roots if fname.startswith("level") else prefabs).add(g.m_Name)
+        return prefabs, scene_roots
+
     # -- architecture ------------------------------------------------------
     def export_architecture(self):
         """MonoScript inventory — the full C# class list, no IL2CPP tooling."""
@@ -1349,13 +1416,18 @@ def rigidbody_dict(rb):
 # Entity grouping — "things that combine into one object share a folder"
 # ---------------------------------------------------------------------------
 
-def collect_entity_names(levels, extractor, extra=None):
+def collect_entity_names(levels, extractor, extra=None, limit=2000):
     """Which root GameObjects deserve their own folder.
 
-    1. every distinct entity id named by the level data,
-    2. a name-pattern sweep for gameplay nouns the levels never mention
-       (remote/CDN levels routinely hide Magnet/Portal/WreckingBall/Rope),
-    3. explicit extras from the caller.
+    Sources, in order of reliability:
+    1. **structural** — every content-bearing prefab root in the package. Engine
+       level, so it works for any game; a title whose meshes are called
+       `BezierCurve.041` is grouped just as well as one with semantic names.
+    2. **level data** — every distinct entity id the level database names.
+    3. **name hints** — a gameplay-noun sweep, which catches objects embedded in
+       a scene rather than shipped as prefabs (a cannon parented under the
+       gameplay scene root, say), minus obvious UI names.
+    4. explicit extras from the caller.
     """
     from_levels = set()
     for variants in levels.values():
@@ -1371,12 +1443,21 @@ def collect_entity_names(levels, extractor, extra=None):
         g = _read(o)
         if g is not None and g.m_Name:
             go_names.add(g.m_Name)
+    prefabs, scene_roots = extractor.discover_prefab_roots()
     hinted = {n for n in go_names
               if ENTITY_HINT_RE.search(n) and not UI_NOISE_RE.search(n)}
-    wanted = (from_levels | hinted | set(extra or [])) & go_names
+    wanted = (prefabs | scene_roots | from_levels | hinted | set(extra or [])) & go_names
+    dropped_for_limit = 0
+    if limit and len(wanted) > limit:
+        keep = (from_levels & go_names) | set(sorted(prefabs)[:limit])
+        dropped_for_limit = len(wanted) - len(keep)
+        wanted = keep
     return wanted, {"from_levels": len(from_levels),
                     "matched_in_package": len(from_levels & go_names),
+                    "prefab_roots": len(prefabs),
+                    "scene_roots": len(scene_roots),
                     "hinted": len(hinted),
+                    "dropped_for_limit": dropped_for_limit,
                     "named_by_levels": sorted(from_levels & go_names)}
 
 
@@ -1401,8 +1482,8 @@ class EntityBuilder:
     def _walk(self, root, max_nodes=400, max_depth=5):
         agg = {"name": root.m_Name, "meshes": [], "broken_pieces": [], "materials": {},
                "textures": {}, "colliders": [], "joints": [], "rigidbody": None,
-               "animator": None, "particles": [], "sprites": [], "scripts": set(),
-               "children": [], "external_meshes": [], "transform": None,
+               "animator": None, "particles": [], "particle_owners": [], "sprites": [],
+               "scripts": set(), "children": [], "external_meshes": [], "transform": None,
                "renderers": []}
         tr = _transform_of(root)
         if tr is not None:
@@ -1421,8 +1502,13 @@ class EntityBuilder:
                     stack.append((ch, depth + 1))
         agg["scripts"] = sorted(agg["scripts"])
         agg["children"] = sorted(set(agg["children"]))
-        for ps in self.particles.get(root.m_Name, []):
-            agg["particles"].append(os.path.basename(ps))
+        # child GameObjects own their own ParticleSystems; pull every one in the
+        # subtree, not just a system sitting on the root
+        for owner in dict.fromkeys([root.m_Name] + agg["particle_owners"]):
+            for ps in self.particles.get(owner, []):
+                name = os.path.basename(ps)
+                if name not in agg["particles"]:
+                    agg["particles"].append(name)
         return agg
 
     def _collect(self, go, agg):
@@ -1467,6 +1553,8 @@ class EntityBuilder:
                 agg["colliders"].append(collider_dict(c, tn))
             elif tn.endswith("Joint"):
                 agg["joints"].append(joint_dict(c, tn))
+            elif tn == "ParticleSystem":
+                agg["particle_owners"].append(go.m_Name)
             elif tn == "Rigidbody" and agg["rigidbody"] is None:
                 agg["rigidbody"] = rigidbody_dict(c)
             elif tn == "Animator" and agg["animator"] is None:
@@ -1755,6 +1843,10 @@ def _geometry_status(agg):
         if kinds:
             return "builtin-primitive"
         return "external-reference"
+    renderers = set(agg.get("renderers") or [])
+    if agg["particles"] or agg.get("particle_owners"):
+        if not renderers - {"ParticleSystemRenderer", "TrailRenderer", "LineRenderer"}:
+            return "particle-effect"
     if agg["sprites"]:
         return "sprite-based"
     if any(re.search(r"tube|rope|generator|verlet|procedural", s, re.I)
@@ -1795,6 +1887,10 @@ def _entity_readme(info):
         lines += ["Its mesh references `Library/unity default resources`, i.e. a Unity "
                   "**built-in primitive** (Sphere/Cube/Quad). Nothing is missing — "
                   "recreate with a primitive plus the material values below.", ""]
+    if status == "particle-effect":
+        lines += ["A VFX prefab: no mesh by design. Its full particle-module settings are "
+                  "under `particles/` — every module value is recorded, so it can be "
+                  "rebuilt exactly.", ""]
     if status == "procedural":
         lines += ["No static mesh: the geometry is **generated at runtime** by the scripts "
                   "listed in `entity.json`. Reimplement the generator, do not hunt for a model.", ""]
@@ -2003,6 +2099,9 @@ def main(argv=None):
     ap.add_argument("--work", help="scratch dir for unpacking (default <out>/../_unity-work)")
     ap.add_argument("--engine", default="unity", help="engine label for the manifest")
     ap.add_argument("--no-previews", action="store_true", help="skip mesh rendering")
+    ap.add_argument("--max-entities", type=int, default=2000,
+                    help="cap on grouped entity folders (0 = no cap); any drop is "
+                         "recorded in the manifest notes, never silent")
     ap.add_argument("--keep-work", action="store_true", help="keep the unpack scratch dir")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
@@ -2068,16 +2167,26 @@ def main(argv=None):
     level_analysis = analyse_levels(levels)
     if levels:
         x.write_json("levels/level-analysis.json", level_analysis)
-    wanted, ent_stats = collect_entity_names(levels, x)
+    else:
+        x.notes.append("No level data found as TextAssets. Either this game stores "
+                       "levels in ScriptableObjects (field values are stripped in an "
+                       "IL2CPP build), builds them procedurally, or downloads them at "
+                       "runtime — level-analysis.json is absent, not empty by accident.")
+    wanted, ent_stats = collect_entity_names(levels, x, limit=args.max_entities)
     entities = EntityBuilder(x, wanted, level_analysis, particles).build()
     entities, dropped = prune_entities(entities, set(ent_stats.get("named_by_levels") or []))
     if dropped:
         x.notes.append(f"{len(dropped)} name-matched candidates were dropped as empty "
                        "UI objects (no geometry, colliders, joints, particles or sprites).")
+    if ent_stats.get("dropped_for_limit"):
+        x.notes.append(f"{ent_stats['dropped_for_limit']} further entity candidates were "
+                       f"capped off by --max-entities; raise it to group them all.")
     index = write_entity_folders(x, entities, level_analysis, particles)
     x.export_physics(entity_names=set(entities))
     log(f"       {len(index)} entities "
-        f"({ent_stats['matched_in_package']}/{ent_stats['from_levels']} level ids matched)")
+        f"({ent_stats['prefab_roots']} prefab roots, "
+        f"{ent_stats['matched_in_package']}/{ent_stats['from_levels']} level ids matched, "
+        f"{ent_stats['hinted']} name-hinted)")
 
     if not args.no_previews:
         log("[10/11] previews")

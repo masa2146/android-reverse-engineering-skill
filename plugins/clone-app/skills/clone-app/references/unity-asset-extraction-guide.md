@@ -62,8 +62,21 @@ game-assets/
 
 ## Entity grouping algorithm
 
-1. **Candidates** = every distinct `Id` in the level data ∪ a gameplay-noun name
-   sweep (`ENTITY_HINT_RE`) minus obvious UI names (`UI_NOISE_RE`).
+Grouping must not depend on a game's naming conventions — plenty of titles ship
+meshes called `BezierCurve.041`. So discovery is **structural first**:
+
+1. **Candidates**, in order of reliability:
+   - **structural** — every content-bearing prefab root in the package: a
+     transform with no parent, living outside a scene file, whose subtree
+     contains a MeshFilter / SkinnedMeshRenderer / SpriteRenderer / MeshRenderer
+     / ParticleSystem / Trail- or LineRenderer. This is engine-level and works
+     for any game and genre.
+   - **level data** — every distinct entity `Id` the level database names.
+   - **name hints** — a gameplay-noun sweep (`ENTITY_HINT_RE`) minus obvious UI
+     names (`UI_NOISE_RE`), which catches objects embedded in a scene rather
+     than shipped as prefabs (a cannon parented under the gameplay scene root).
+   `--max-entities` caps the total; anything dropped by the cap is recorded in
+   the manifest notes, never silently.
 2. **Walk** each candidate root's transform subtree (depth ≤ 5, ≤ 400 nodes),
    collecting `MeshFilter.m_Mesh` **and** `SkinnedMeshRenderer.m_Mesh` (missing
    the latter silently drops every rigged model), renderer materials and their
@@ -83,6 +96,7 @@ game-assets/
 | `extracted` | meshes written to the folder |
 | `builtin-primitive` | the mesh PPtr resolves to `Library/unity default resources` — a Unity Sphere/Cube/Quad. **Nothing is missing**; recreate with a primitive plus the recorded material values |
 | `procedural` | no static mesh exists; the original generates it at runtime (tube/rope/Verlet generators). Reimplement the generator |
+| `particle-effect` | a VFX prefab: no mesh by design. Every particle module value is under `particles/`, so it can be rebuilt exactly |
 | `sprite-based` | 2D object, no 3D geometry |
 | `external-reference` | points at a file outside the package (CDN/Addressable content not shipped in the APK) |
 | `empty` | genuinely nothing found — reported, not hidden |

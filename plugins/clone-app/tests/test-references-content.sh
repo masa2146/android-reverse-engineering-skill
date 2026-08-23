@@ -44,6 +44,8 @@ has "$R/unity-asset-extraction-guide.md" "Grouping rule"
 has "$R/unity-asset-extraction-guide.md" "geometry_status"
 has "$R/unity-asset-extraction-guide.md" "builtin-primitive"
 has "$R/unity-asset-extraction-guide.md" "exactly three things"
+has "$R/unity-asset-extraction-guide.md" "structural"
+has "$R/unity-asset-extraction-guide.md" "particle-effect"
 has "$R/engines/module-contract.md" "entities/<Name>/"
 has "$R/report-template.md" "project-settings/README.md"
 
