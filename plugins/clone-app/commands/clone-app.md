@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit, WebFetch, WebSearch, Skill, Agent
-description: Extract everything from a Google Play app — content, API surface, mechanics, architecture — then judge cloning it
+description: Extract everything from a Google Play app — content, API surface, mechanics, architecture, build spec — then judge cloning it
 user-invocable: true
 argument-hint: <Google Play URL or package name>
 argument: Google Play URL or package name (optional)
@@ -37,12 +37,17 @@ Phases 0–5 (no interaction):
 - **5** for a game: the **reconstruction** — architecture, mechanics, runtime
   flow, meta/LiveOps design, unknowns ledger, code skeleton
 
-Then exactly two interaction points:
-- **Phase 6** — which clone stack to cost the estimate against
-- **Phase 9** — whether to assemble the build spec and hand off to
-  `superpowers:writing-plans`
+Phases 6–9 finish the paperwork: stack choice, effort and cost, reports, build
+spec.
 
-Answering "no" at Phase 9 costs nothing already produced.
+**Exactly one interaction point:** Phase 6, which clone stack to cost the
+estimate against. There is no other gate — nothing later is expensive enough to
+be worth asking about.
+
+The **implementation plan is not written here.** It belongs to the session that
+builds: that one has the repo open and a free context. Finish by pointing the
+user at the working directory and telling them to run `writing-plans` in a fresh
+session with `deliverables/clone-build-spec.md`.
 
 Skip Phases 4 and 5 **only** if the user explicitly asks for a fast,
 report-only pass, and say so in the report.

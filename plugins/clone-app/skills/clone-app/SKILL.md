@@ -7,15 +7,17 @@ trigger: clone app|clone this app|clone feasibility|feasibility analysis|estimat
 
 Take a Google Play URL (or package name), reverse engineer the app, analyze its
 market, estimate AI-assisted clone effort and infrastructure cost, and produce a
-viability report. If the user approves, hand off to the writing-plans skill to
-generate a full implementation plan.
+viability report and a build spec. The implementation plan is left to the
+session that actually builds — this one hands over a standalone working
+directory instead.
 
 This skill orchestrates 10 phases (0–9). **Everything that learns about the
 target runs by default** — content extraction, the API surface, the deep API /
 logic / backend pass, and for a game the full reconstruction. The only pauses
-are Phase 6 (which clone stack to cost out) and Phase 9 (whether to produce an
-implementation plan). By the end of Phase 5 the target has been fully extracted
-and written up, whatever the user decides afterwards.
+are Phase 6 (which clone stack to cost out). By the end of Phase 5 the target
+has been fully extracted and written up; Phases 6–9 turn that into reports and a
+build spec. The implementation plan is deliberately **not** written here — it
+belongs to the session that builds.
 
 If the user explicitly asks for a fast, report-only pass, skip Phases 4 and 5
 and say so in the report — but never skip them silently, and never make the user
@@ -433,21 +435,10 @@ $WORK/deliverables/clone-report-<YYYY-MM-DD>.md
 ```
 (Use the actual run date.) Show the user a concise summary + the verdict.
 
-## Phase 9: Decision Gate → Build Spec
+## Phase 9: Build Spec
 
-### Phase 9a — Ask
-
-By now **everything about the target has been extracted and written up**:
-content, API surface, deep API payloads, in-app logic, navigation, backend
-recon, and — for a game — the full reconstruction. What remains is a decision
-about *doing the work*, not about learning more.
-
-Ask: "Reports are in `$WORK/deliverables/`. Assemble the **build spec** and hand
-off to `writing-plans` for a full implementation plan?"
-- **Yes** → Phase 9b.
-- **No** → stop. Everything already produced stands on its own.
-
-### Phase 9b — Build spec + plan handoff
+No gate. Everything this phase needs is already on disk, and assembling it is
+cheap — it is a compilation of artifacts, not new analysis. Produce it always.
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/clone-build-spec-template.md`.
 Assemble `$WORK/deliverables/clone-build-spec.md`, filling every section from the artifacts:
@@ -457,15 +448,30 @@ Assemble `$WORK/deliverables/clone-build-spec.md`, filling every section from th
 - §3b user-flow diagrams from `$WORK/extracted/logic-digest.md`,
 - §4 from `$WORK/extracted/nav-graph.json`,
 - §5 from `$WORK/extracted/payloads.json` (full Tier-2), §5b + §6 from `$WORK/extracted/backend-recon.md`,
-- §7 asset inventory from `$WORK/raw/decompiled` (or `$WORK/extracted/game-assets/` for Unity),
+- §7 asset inventory from `$WORK/extracted/game-assets/` (or `$WORK/raw/decompiled` for non-games),
 - §8 acceptance criteria per screen + flow,
 - §10 absolute paths to every `$WORK/` artifact.
-Use the **Game variant** sections when RE Method indicated Unity.
+Use the **Game variant** sections when a game engine was detected, and point §3
+and §7 at `$WORK/deliverables/reconstruction/` — for a game that package, not
+the screenshot list, is the real specification.
 
-Then invoke `superpowers:writing-plans`, passing `$WORK/deliverables/clone-build-spec.md` as
-the spec and citing BOTH `$WORK/deliverables/clone-report-<date>.md` and
-`$WORK/deliverables/fidelity-report-<date>.md` as reference. The build spec + `$WORK/` is the
-standalone input — a fresh session with it can build an exact / near-exact clone.
+### Do NOT write the implementation plan here
+
+The plan belongs in the session that builds, not this one. That session has the
+target repo open, a free context, and the ability to adjust the plan as the code
+lands; this one has spent its context on extraction. Writing it here produces a
+plan nobody reads against a repo that does not exist yet.
+
+End by telling the user exactly how to continue:
+
+> Everything is under `./work/<package>/`. To build, start a **fresh session** in
+> the target repo and run `superpowers:writing-plans`, passing
+> `deliverables/clone-build-spec.md` as the spec and citing
+> `deliverables/clone-report-<date>.md`, `deliverables/fidelity-report-<date>.md`
+> and (for a game) `deliverables/reconstruction/`.
+
+The working directory is the standalone handoff — a fresh session with it can
+build an exact / near-exact clone without rerunning any of this.
 
 ## Error Handling Summary
 | Scenario | Action |
@@ -481,7 +487,7 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | App Store not found | continue Google Play only |
 | Play scrape returns nulls | web-search fallback, note source |
 | Heavy obfuscation | add uncertainty band, note in report |
-| writing-plans unavailable | write the plan as Markdown manually |
+| User asks for the plan now | say why it belongs in the build session (free context, repo present, plan can follow the code) and offer it anyway if they insist |
 | Unity build detected | run the content extraction, then the IL2CPP metadata dump (no .NET needed) |
 | Unity tool missing | Phase 2c gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
 | Extraction venv unavailable | `unity-assets.sh` exits 3 with install guidance — no game content is produced; surface this at the Phase 2c gate, never proceed silently |
@@ -491,7 +497,7 @@ standalone input — a fresh session with it can build an exact / near-exact clo
 | Phase 5 subagent fails | retry once, then keep the partial `reconstruction/` and name the missing documents |
 | `api-surface.json` missing | Phase 5 still runs from assets alone, but mechanics drop to `[D]`-only; say so in the reconstruction README |
 | No screenshots on Play | note it, rely on design-tokens + web image search |
-| Phase 9 = No | stop; every extraction and report already produced stands on its own |
+| User does not want a build spec | it is cheap and already-assembled data — write it anyway and say so; there is nothing to gate |
 | User asks for a fast pass | skip Phases 4 and 5, state the omission in the report; never skip them unasked |
 | Deep-extraction subagent fails | retry once, then continue with partial artifacts and note the gap |
 | extract-logic/nav-graph finds nothing (Flutter/RN) | note low confidence, lean on screenshots + API contract |

@@ -87,11 +87,13 @@ It is driven by `references/game-reconstruction-guide.md` and runs in a
 subagent — the recovered API surface is several megabytes and must never enter
 the orchestrator's context.
 
-The workflow has exactly two interaction points: **Phase 6** (which stack to
-cost the estimate against) and **Phase 9** (whether to produce an implementation
-plan). Everything that learns about the target — content extraction, API
-surface, deep API/logic/backend pass, reconstruction — has already finished by
-then. Declining at Phase 9 costs nothing already produced.
+The workflow has exactly one interaction point: **Phase 6**, which stack to cost
+the estimate against. Everything else runs to completion — content extraction,
+API surface, deep API/logic/backend pass, reconstruction, reports, build spec.
+
+The implementation plan is deliberately not written here. It belongs to the
+session that builds, which has the target repo open and a free context; this one
+hands over a standalone working directory instead.
 
 Extraction and the metadata dump are **deterministic**: rerunning them on the
 same package produces a byte-identical tree. The reconstruction documents are
