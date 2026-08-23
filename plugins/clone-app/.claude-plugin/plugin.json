@@ -1,6 +1,6 @@
 {
   "name": "clone-app",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Take a Google Play app apart completely: download the package, reverse engineer it, extract all game content grouped per object, recover the C# API surface, reconstruct architecture and mechanics, estimate AI-assisted clone effort and infra cost, assess market viability, and hand over a standalone build spec.",
   "author": {
     "name": "masa2146"

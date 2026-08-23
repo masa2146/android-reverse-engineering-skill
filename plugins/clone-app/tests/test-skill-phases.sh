@@ -10,6 +10,8 @@ has() {
 
 has "extract-design.py"
 has "detect-unity.sh"
+has "Do not ask about \`dotnet\` on an IL2CPP build"
+has "substantially empty result"
 has "il2cpp-dump.sh"
 has "unity-assets.sh"
 has "design-tokens.json"

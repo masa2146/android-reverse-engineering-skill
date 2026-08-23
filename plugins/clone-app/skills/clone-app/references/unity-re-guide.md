@@ -113,18 +113,25 @@ rebuilds prefabs with meshes, materials, colliders, rigidbody and joints applied
 For layout reference the Play screenshots in `$WORK/extracted/store/screenshots/` still help,
 but they are no longer the primary source — the extracted `ui/` trees are.
 
-## Dependency gate (Phase 2c) vs graceful degradation
+## Tool check (Phase 2c) — when to interrupt, and when not to
 
-The Phase 2c Unity tool gate runs **before** the RE subagent. Its primary check
-is now the **extraction venv / UnityPy**, because that is what determines
-whether any assets come out at all. `dotnet` + `Il2CppInspector` / `ilspycmd`
-remain the type-model tools; `AssetRipper` is optional and its absence costs
-nothing.
+The check runs before the RE subagent. Its rule is narrow: **interrupt only when
+proceeding would produce a substantially empty result.**
 
-If the venv cannot be created (offline, no pip), the gate **pauses and asks the
-user** rather than degrading silently, and only then may the subagent set
-`RE Method: limited:unity-no-unitypy`. The wrappers still exit 3 with install
-guidance when invoked directly (the path `test-unity-wrappers.sh` exercises).
+- **Extraction venv (UnityPy) missing** → ask. Without it there is no content at
+  all and no reconstruction.
+- **`ilspycmd` missing on a Mono build** → ask. It costs the method bodies, the
+  one artifact IL2CPP can never give you.
+- **`dotnet` + `Il2CppInspector` missing on an IL2CPP build** → **do not ask.**
+  All that is lost is resolved field/enum *types*; every class, field, property
+  and method **name** already comes from `il2cpp-metadata-dump.py`, which needs
+  no .NET, and method bodies are native ARM either way. A ~1 GB sudo install for
+  type annotations is not worth stopping a run for. Record
+  `RE Method: limited:unity-no-il2cpp-types`, note it in the digest and the
+  report as an optional upgrade, and continue.
+
+The wrappers still exit 3 with install guidance when invoked directly with a
+missing binary (the path `test-unity-wrappers.sh` exercises).
 
 ## Legal
 

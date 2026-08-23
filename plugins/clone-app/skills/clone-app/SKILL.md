@@ -116,11 +116,11 @@ Whatever engine runs, its module fills the uniform contract in
 `python3 ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/gen-coverage-report.py <manifest.json> --out $WORK/extracted/coverage-report.md`).
 The downstream build spec reads `coverage-report.md` — never assume full coverage.
 
-### Phase 2c — Unity tool dependency gate (run after engine dispatch, before the RE subagent dispatch)
+### Phase 2c — Unity tool check (run after engine dispatch, before the RE subagent dispatch)
 
-Classify the build and confirm the extraction tooling is present, so the cost of
-a missing tool is surfaced **before** the RE subagent runs — not buried in a
-silent `limited:` digest afterward.
+Establish what is available. **Only one missing tool is worth interrupting the
+user for** — see the rule below. Everything else degrades with a recorded note
+and the run continues.
 
 ```bash
 UNITY="$(bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/detect-unity.sh "$APK")"   # il2cpp | mono | none
@@ -130,47 +130,38 @@ has_il2cpp() { command -v "${IL2CPP_INSPECTOR_CLI:-Il2CppInspector}" >/dev/null 
 has_ilspy()  { command -v ilspycmd >/dev/null 2>&1; }
 ```
 
-If `UNITY` is `none`, set `UNITY_TOOLS=n/a` and skip the rest of this gate.
-Otherwise:
-
-| Build | Asset + content extraction (primary) | Type-model tooling (secondary) |
-|---|---|---|
-| `il2cpp` | **extraction venv** (`setup-extraction-venv.sh` → UnityPy, numpy, Pillow) | `.NET` runtime (`dotnet`) **+** `Il2CppInspector` (Il2CppInspectorRedux) |
-| `mono`   | **extraction venv** (same) | `.NET` runtime (`dotnet`) **+** `ilspycmd` |
+If `UNITY` is `none`, set `UNITY_TOOLS=n/a` and skip the rest.
 
 **AssetRipper is not required** — `unity-assets.sh` extracts with UnityPy.
-`ASSETRIPPER_CLI` is an optional supplement only; its absence costs nothing.
+`ASSETRIPPER_CLI` is an optional supplement; its absence costs nothing.
 
-> **Reality check for `il2cpp`:** C# method bodies are compiled to native ARM and
-> are unrecoverable **regardless of tools**. The IL2CPP tool only recovers
-> class/method/field *signatures* — and the class inventory is recoverable from
-> `MonoScript` records by the extractor anyway. What genuinely rides on the
-> IL2CPP dump is the field/enum type model.
+### When to interrupt
 
-**If a required tool is missing → PAUSE and ask the user** (do not degrade
-silently). Tell them, concretely:
-- the build type, and that `il2cpp` method bodies are unrecoverable either way;
-- what each missing piece loses:
-  - **extraction venv absent → no game content at all**: no meshes, textures,
-    sprites, materials, shaders, particles, animations, fonts, levels, scenes,
-    prefab structure or project settings. This is the expensive one.
-  - `dotnet`/`Il2CppInspector` absent → no field/enum type model in
-    `unity-digest.md`.
-- the exact commands + cost:
-  - `bash ${CLAUDE_PLUGIN_ROOT}/skills/clone-app/scripts/setup-extraction-venv.sh`
-    — local venv, ~150 MB, no sudo
-  - `brew install --cask dotnet-sdk` — .NET, ~1 GB, **sudo** (user-run via `!`)
-  - Il2CppInspectorRedux: download `Il2CppInspectorRedux.CLI-osx-arm64.zip` from
-    https://github.com/LukeFZ/Il2CppInspectorRedux/releases, unzip, export
-    `IL2CPP_INSPECTOR_CLI=<path>`
-  - `brew install ilspycmd` (mono decompile)
-- then ask: **install now, or proceed limited?**
+Ask only when the missing tool costs something the user cannot get any other
+way. Judge by what is actually lost:
 
-Set `UNITY_TOOLS=full` if everything the user wants is present (or they just
-installed it), else `UNITY_TOOLS=limited:<reason>` (e.g.
-`limited:unity-no-unitypy`, `limited:unity-no-dotnet`). Pass `$UNITY` and
-`$UNITY_TOOLS` to the Phase 2d subagent. Proceeding `limited:` is only valid once
-the user has acknowledged the cost.
+| Missing | What is lost | Interrupt? |
+|---|---|---|
+| **extraction venv** (UnityPy) | **everything**: no meshes, textures, sprites, materials, shaders, particles, animations, fonts, levels, scenes, prefab structure, project settings — and no reconstruction | **YES.** Without it the run has almost no output. Offer `setup-extraction-venv.sh` (~150 MB, local, no sudo). |
+| **`ilspycmd`** on a `mono` build | near-source C# — the **method bodies**, i.e. the actual algorithms. This is the one thing IL2CPP can never give you, so on a Mono build it is the single most valuable artifact available | **YES.** `brew install ilspycmd` |
+| `dotnet` + `Il2CppInspector` on an `il2cpp` build | resolved field/enum **types** only. Every class, field, property and method **name** still comes back from `il2cpp-metadata-dump.py`, which needs nothing; method bodies are native ARM and unrecoverable with or without it | **NO.** Proceed. |
+
+**Do not ask about `dotnet` on an IL2CPP build.** A ~1 GB install behind a sudo
+prompt, in exchange for type annotations on names you already have, is not a
+decision worth stopping a run for — and the skill has one interaction point by
+design. Set `UNITY_TOOLS=limited:unity-no-il2cpp-types`, carry on, and record
+the gap where it belongs:
+- one line in `unity-digest.md`: field/enum types unresolved, names complete;
+- one line in the report's Game Content section, naming the install as an
+  optional upgrade for a later run.
+
+That is the rule in general: **interrupt only when proceeding would produce a
+substantially empty result.** Anything else is a note, not a question.
+
+Set `UNITY_TOOLS=full` when everything relevant is present, else
+`limited:<reason>` (`limited:unity-no-unitypy`, `limited:unity-no-ilspy`,
+`limited:unity-no-il2cpp-types`). Pass `$UNITY` and `$UNITY_TOOLS` to the Phase
+2d subagent.
 
 Pick the branch:
 
@@ -489,8 +480,9 @@ build an exact / near-exact clone without rerunning any of this.
 | Heavy obfuscation | add uncertainty band, note in report |
 | User asks for the plan now | say why it belongs in the build session (free context, repo present, plan can follow the code) and offer it anyway if they insist |
 | Unity build detected | run the content extraction, then the IL2CPP metadata dump (no .NET needed) |
-| Unity tool missing | Phase 2c gate pauses + asks the user (install vs limited); `RE Method: limited:<reason>` only after consent |
-| Extraction venv unavailable | `unity-assets.sh` exits 3 with install guidance — no game content is produced; surface this at the Phase 2c gate, never proceed silently |
+| `dotnet`/`Il2CppInspector` missing on IL2CPP | **do not ask** — proceed, set `limited:unity-no-il2cpp-types`, note it in the digest and report. Names come from the metadata dump; only resolved types are lost |
+| `ilspycmd` missing on a Mono build | ask — it costs the method bodies, the one thing IL2CPP can never provide |
+| Extraction venv unavailable | ask — without UnityPy the run produces almost nothing. `unity-assets.sh` exits 3 with install guidance; never proceed silently |
 | `unity-assets.sh` exits 4 | extraction ran but produced no manifest — report as a failure, do not treat an empty `game-assets/` as coverage |
 | Entity has no mesh | check `geometry_status` in its `entity.json`: `builtin-primitive` / `procedural` / `external-reference` are findings, not failures |
 | Non-game package | skip Phase 5 (reconstruction needs a game engine's extracted content); everything else runs unchanged |
