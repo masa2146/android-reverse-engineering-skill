@@ -205,6 +205,15 @@ Tell the subagent its clone-app scripts dir is
      Read `$WORK/extracted/game-assets/IMPORT.md`, `manifest.json` and
      `project-settings/README.md` — never the extracted files themselves.
      The output contract is `unity-asset-extraction-guide.md`.
+     **Remote/CDN content:** `unity-assets.sh` only gets what ships *in* the APK.
+     If the app uses Addressables with a RemoteLoadPath (a `catalog.bin` +
+     `settings.json` under `assets/aa/`, a `CDNAssetService`/`RemoteLevels` type),
+     a large share of real content (event UI, story art, extra audio, level packs)
+     is fetched from a CDN at runtime and is **not** in the package. Recovering it
+     is a separate pass — read `${CLAUDE_PLUGIN_ROOT}/skills/clone-app/references/remote-asset-cdn-guide.md`
+     (classify local vs remote first; resolve the CDN base via a **system HTTP
+     proxy + user CA** or the UnityCache scrape — a transparent VPN won't decrypt
+     Unity TLS; levels often come from an authed game API, not the asset CDN).
    - **Unity (`il2cpp`) — API surface, always run, needs no .NET:** locate
      `global-metadata.dat` (under `$WORK/raw/decompiled` or unzipped from `$APK`) and run
      `python3 "$CA/il2cpp-metadata-dump.py" <metadata> --out "$WORK/extracted/api-surface.json" --markdown "$WORK/extracted/api-surface.md"`.
