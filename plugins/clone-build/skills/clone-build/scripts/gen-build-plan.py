@@ -18,6 +18,13 @@ GATE = {
     "api":         ("tdd",          "contract test vs payloads.json shape exits 0"),
     "logic":       ("tdd",          "failing test written first, then test exits 0"),
     "integration": ("launch-crash", "app/scene launches; no fatal in log for N seconds"),
+    # game-branch types. A game is not a screen list — it is engine settings,
+    # imported art, mechanics, a level pipeline and a tuning backlog.
+    "engine-settings": ("build",       "measured project settings applied; compiles, 0 errors"),
+    "art-import":      ("build",       "prefabs built FROM entity.json nodes (hierarchy, local TRS, per-slot materials); count matches the index"),
+    "mechanic":        ("tdd",         "failing test written first from the reconstruction's rule, then test exits 0"),
+    "level-pipeline":  ("tdd",         "schema round-trips: author -> validate -> content hash -> load -> identical board"),
+    "tuning":          ("manual",      "value chosen by the experiment in 05-UNKNOWNS.md and recorded, or explicitly deferred"),
 }
 
 
@@ -53,6 +60,151 @@ def gate(task_type):
     return {"kind": k, "command": "", "pass_when": pw}
 
 
+def _read(path):
+    try:
+        with open(path, errors="ignore") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _slug(t):
+    return re.sub(r'[^a-z0-9]+', '-', str(t).lower()).strip('-') or "x"
+
+
+def game_tasks(work, spec_path, gate, status_for, shots_dir):
+    """Build the task graph a GAME actually needs.
+
+    The app path keys off nav-graph nodes and endpoints. For a game those are the
+    wrong spine: nav-graph nodes are `*View` TYPE NAMES (hundreds of them, with no
+    screenshot to diff against), and the endpoint list describes a backend a local
+    rebuild stubs. The real specification is `reconstruction/` plus the measured
+    `asset-guide/` and `game-assets/`. This function reads those.
+    """
+    G = os.path.join(work, "game-assets")
+    AG = os.path.join(work, "asset-guide")
+    REC = os.path.join(os.path.dirname(work), "deliverables", "reconstruction")
+    if not os.path.isdir(REC):
+        REC = os.path.join(work, "reconstruction")
+    tasks, ids = [], []
+
+    def add(tid, ttype, title, inputs, instructions, deps, status="pending"):
+        tasks.append({"id": tid, "type": ttype, "title": title,
+                      "inputs": [i for i in inputs if i],
+                      "instructions": instructions, "gate": gate(ttype),
+                      "status": status, "depends_on": deps})
+        ids.append(tid)
+
+    # 1. measured engine settings, before any gameplay code
+    ps = os.path.join(G, "project-settings")
+    if os.path.isdir(ps):
+        add("engine-settings", "engine-settings",
+            "Apply the measured engine settings",
+            [ps, os.path.join(G, "physics.json")],
+            "Apply physics, time, quality, layers and the LAYER COLLISION MATRIX from "
+            "project-settings/ — these are measured from the original, not defaults. "
+            "Do this before writing gameplay code.",
+            ["scaffold"])
+
+    # 2. art import, grouped by archetype from the generated index
+    idx = os.path.join(AG, "ASSET-INDEX.tsv")
+    arche = {}
+    if os.path.isfile(idx):
+        lines = _read(idx).splitlines()
+        if lines:
+            head = lines[0].split("\t")
+            ai = head.index("archetype") if "archetype" in head else 1
+            ni = head.index("nodes") if "nodes" in head else -1
+            for ln in lines[1:]:
+                c = ln.split("\t")
+                if len(c) <= ai:
+                    continue
+                a = c[ai] or "misc"
+                arche.setdefault(a, [0, 0])
+                arche[a][0] += 1
+                if ni >= 0 and len(c) > ni and c[ni] not in ("-", ""):
+                    arche[a][1] += 1
+    for a in sorted(arche):
+        n, withnodes = arche[a]
+        add("art-%s" % _slug(a), "art-import",
+            "Import %d '%s' entities as prefabs" % (n, a),
+            [idx, os.path.join(G, "entities")],
+            "Build a prefab per entity in the '%s' family. **Build from `entity.json` -> "
+            "`nodes`**: parent, localPosition/Rotation/Scale, mesh_file, materials IN SLOT "
+            "ORDER, active, fracture (debris under a disabled root). %d of these carry a node "
+            "tree. The flat mesh list is an index, not a recipe. Check COMPONENT-RECIPES.md "
+            "for the component stack this family needs." % (a, withnodes),
+            ["engine-settings"] if os.path.isdir(ps) else ["scaffold"])
+
+    # 3. mechanics, from the reconstruction's own chapter headings
+    mech_doc = os.path.join(REC, "02-GAMEPLAY-MECHANICS.md")
+    mechs = []
+    if os.path.isfile(mech_doc):
+        for m in re.finditer(r'(?m)^##\s+\d+[.)]?\s+(.+?)\s*$', _read(mech_doc)):
+            t = m.group(1).strip()
+            if 3 < len(t) < 70:
+                mechs.append(t)
+    for t in mechs[:40]:
+        add("mechanic-%s" % _slug(t)[:40], "mechanic",
+            "Implement mechanic: %s" % t,
+            [mech_doc], "TDD this mechanic against its section in 02-GAMEPLAY-MECHANICS.md. "
+            "Honour the evidence tags: [D]/[S] are facts to reproduce, [I] is an inference to "
+            "state, [X] is unknown - take the value from 05-UNKNOWNS.md, do not invent it.",
+            ["engine-settings"] if os.path.isdir(ps) else ["scaffold"])
+
+    # 4. level pipeline — nothing ships with the level DB in a live-content game
+    if os.path.isdir(os.path.join(G, "levels")) or mechs:
+        add("level-schema", "level-pipeline", "Define the level schema + validators",
+            [REC, os.path.join(G, "levels")],
+            "Define the level JSON schema and its validators, and a content hash. "
+            "Recovered accessor/validator names give the shape; the JSON key names are "
+            "yours to choose.", ["scaffold"])
+        add("level-editor", "level-pipeline", "Level editor + image importer",
+            [REC], "An in-editor authoring window: draw the board, place features, validate, "
+            "hash, save. Add an image importer that snaps a picture to the palette - it is the "
+            "fastest way to author content.", ["level-schema"])
+        add("level-loader", "level-pipeline", "Runtime level load + cache + save/resume",
+            [REC], "Load levels from StreamingAssets, cache them, and serialise mid-level "
+            "state so backgrounding the app never loses a level.", ["level-schema"])
+
+    # 5. real screens: the canvas dump, not `*View` type names
+    ui_dir = os.path.join(G, "ui")
+    if os.path.isdir(ui_dir):
+        canvases = sorted(f for f in os.listdir(ui_dir) if f.endswith(".json"))
+        sized = []
+        for f in canvases:
+            d = load_json(os.path.join(ui_dir, f))
+            n = 0
+            if isinstance(d, dict):
+                def cnt(x):
+                    return 1 + sum(cnt(c) for c in (x.get("children") or []))
+                n = cnt(d.get("tree", {})) if d.get("tree") else 0
+            sized.append((n, f))
+        sized.sort(key=lambda t: (-t[0], t[1]))
+        for n, f in sized[:25]:
+            name = os.path.splitext(f)[0]
+            add("ui-%s" % _slug(name)[:40], "scene",
+                "Build screen: %s (%d nodes)" % (name, n),
+                [os.path.join(ui_dir, f), os.path.join(AG, "UI-ELEMENT-INDEX.tsv"), shots_dir],
+                "Rebuild this canvas from its RectTransform tree. Node name, screen zone and "
+                "size are measured FACT; sprite candidates in UI-ELEMENT-INDEX.tsv are name "
+                "matches - open the PNG before using one. A control is often plate + icon + "
+                "hitbox, not one sprite.",
+                ["art-ui"] if "art-ui" in ids else ["scaffold"])
+
+    # 6. tuning backlog — the numbers the extraction cannot recover
+    unk = os.path.join(REC, "05-UNKNOWNS.md")
+    if os.path.isfile(unk):
+        secs = re.findall(r'(?m)^###\s+[\d.]+\s+(.+?)\s*$', _read(unk))
+        for t in secs[:12]:
+            add("tune-%s" % _slug(t)[:40], "tuning", "Tune: %s" % t, [unk],
+                "Run the experiment in 05-UNKNOWNS.md for this group and record the value "
+                "chosen, or state explicitly that it is deferred. Never invent a number that "
+                "the document frames as an experiment.",
+                ["level-loader"] if "level-loader" in ids else ["scaffold"])
+    return tasks, ids
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("spec")
@@ -72,7 +224,19 @@ def main():
 
     # --- gaps / completeness ---
     gaps = []
-    for req in REQUIRED:
+    # A game clone stubs the backend and rebuilds from reconstruction/ + asset-guide/,
+    # so the app-shaped artifacts are not what it is missing. Judge it on its own inputs.
+    required = REQUIRED if branch != "game" else []
+    if branch == "game":
+        for req, why in (("game-assets", "no extracted content - run clone-app's Unity extraction"),
+                         ("asset-guide", "no asset-usage guide - run clone-app Phase 2f"),):
+            if not os.path.isdir(os.path.join(work, req)):
+                gaps.append({"artifact": req + "/", "reason": why})
+        rec = os.path.join(os.path.dirname(work), "deliverables", "reconstruction")
+        if not os.path.isdir(rec) and not os.path.isdir(os.path.join(work, "reconstruction")):
+            gaps.append({"artifact": "reconstruction/",
+                         "reason": "no reconstruction - run clone-app Phase 5"})
+    for req in required:
         p = os.path.join(work, req)
         if not os.path.exists(p):
             gaps.append({"artifact": req, "reason": "missing"})
@@ -82,9 +246,13 @@ def main():
                 gaps.append({"artifact": req, "reason": "empty or invalid JSON"})
 
     shots_dir = os.path.join(work, "screenshots")
+    if not os.path.isdir(shots_dir):
+        alt = os.path.join(work, "store", "screenshots")
+        if os.path.isdir(alt):
+            shots_dir = alt
     shots = sorted(f for f in os.listdir(shots_dir)
                    if f.lower().endswith(".png")) if os.path.isdir(shots_dir) else []
-    if not shots:
+    if not shots and branch != "game":
         gaps.append({"artifact": "screenshots/", "reason": "no PNG screenshots"})
 
     missing = {g["artifact"] for g in gaps}
@@ -109,6 +277,28 @@ def main():
                         "(substack: %s)." % (branch, substack),
         "gate": gate("scaffold"), "status": "pending", "depends_on": [],
     })
+
+    if branch == "game":
+        gtasks, gids = game_tasks(work, spec_path, gate, status_for, shots_dir)
+        tasks.extend(gtasks)
+        tasks.append({
+            "id": "integration", "type": "integration",
+            "title": "End-to-end integration verify",
+            "inputs": [spec_path],
+            "instructions": "Build, launch, play the first levels end to end; confirm no "
+                            "crash, the core loop resolves, and backgrounding never loses a "
+                            "level.",
+            "gate": gate("integration"), "status": "pending",
+            "depends_on": gids,
+        })
+        plan = {"package": package, "title": title, "branch": branch,
+                "substack": substack, "generated_from": spec_path,
+                "gaps": gaps, "tasks": tasks}
+        with open(args.out, "w") as f:
+            json.dump(plan, f, indent=2)
+            f.write("\n")
+        print("wrote %s (%d tasks, %d gaps)" % (args.out, len(tasks), len(gaps)))
+        return
 
     # 2. design-system
     tasks.append({

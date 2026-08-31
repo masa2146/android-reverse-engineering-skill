@@ -35,8 +35,31 @@ An older flat working dir can be converted with clone-app's
 `migrate-workdir.sh`. If the spec is missing, stop and tell the user to run
 clone-app first.
 
-Write build output into `$WORK/deliverables/` (reports) and `$WORK/clone/` (code)
-— never into `extracted/` or `raw/`.
+### Where the code goes
+
+Reports go to `$WORK/deliverables/`. **Code goes to `$REPO`** — never into
+`extracted/` or `raw/`.
+
+```bash
+REPO="${CLONE_BUILD_REPO:-$WORK/clone}"
+```
+
+- **Default `$WORK/clone/`** — fine for a throwaway or a first pass.
+- **A separate top-level repo is better for real work**, and is what you should
+  prefer once the clone is a product rather than an experiment:
+  - `$WORK` is often several GB of extraction plus `raw/`; a product repo does not
+    belong nested inside it.
+  - `clean-workdir.sh` deletes `raw/`. A repo living under `$WORK` is one careless
+    cleanup away from being collateral.
+  - The clone has its own git history, CI and lifecycle, independent of the
+    analysis that seeded it.
+
+Ask the user for `$REPO` when it is not set and the target looks like real work.
+Record the chosen path in the build report so a later session finds it.
+
+**`$WORK` is read-only from the build's point of view** apart from
+`deliverables/`. The extraction is reference material: reference it by absolute
+path, do not copy `game-assets/` into the repo.
 
 Detect the branch:
 ```bash
@@ -52,10 +75,51 @@ if absent, note the gap and continue with the spine.)
 
 ## P1: Project scaffold
 Per the loaded branch guide, scaffold an empty **buildable** project into
-`$WORK/clone/`. For `game`, this is a headless Unity CLI `-createProject` plus the
+`$REPO`. If `$REPO` already holds a project (a resumed build, or a repo the user
+started by hand), **do not scaffold over it** — verify it builds, then continue
+from P1b. For `game`, this is a headless Unity CLI `-createProject` plus the
 MCP-for-Unity package, then a connection check. For `app`, `flutter create` / a
 gradle template / `react-native init`. Missing prerequisites → print exact setup
 guidance and pause; never half-fail.
+
+### P1b: Install the bootstrap
+
+clone-app's Phase 2g wrote the clone project's day-one instructions. Copy them in
+before any code is generated — an agent told nothing about the extraction invents
+assets, and that is the most expensive failure in this pipeline.
+
+```bash
+BS="$WORK/deliverables/bootstrap"
+REPO="${CLONE_BUILD_REPO:-$WORK/clone}"
+# never clobber a CLAUDE.md the project already owns — merge by hand instead
+[ -f "$BS/CLAUDE.md" ] && [ ! -f "$REPO/CLAUDE.md" ] && cp "$BS/CLAUDE.md" "$REPO/CLAUDE.md"
+mkdir -p "$REPO/Docs/assets"
+cp "$WORK"/extracted/asset-guide/*        "$REPO/Docs/assets/"  2>/dev/null
+cp "$WORK"/extracted/REFERENCE-SOURCES.md "$REPO/Docs/"         2>/dev/null
+cp "$WORK"/deliverables/clone-build-spec.md "$REPO/Docs/"       2>/dev/null
+[ -d "$WORK/deliverables/reconstruction" ] && cp -R "$WORK/deliverables/reconstruction" "$REPO/Docs/"
+```
+
+If `$BS/CLAUDE.md` is absent the working dir predates Phase 2g — generate it now:
+
+```bash
+python3 <clone-app>/skills/clone-app/scripts/gen-project-bootstrap.py "$WORK" \
+  --out "$WORK/deliverables/bootstrap" --project-name "<CloneName>"
+```
+
+Same for the asset guide, if `extracted/asset-guide/` is missing: run clone-app's
+`gen-asset-guide.py`, `gen-ui-map.py` and `gen-reference-sources.py` against
+`$WORK/extracted`. All are deterministic and take seconds.
+
+**Never hand-write a hand-off prompt for the build session.** The bootstrap is
+that prompt, and it is generated from measurements rather than memory.
+
+**Do not copy `extracted/game-assets/` into the repo.** It is reference material,
+hundreds of MB, and not yours to ship. Reference it through `$W` as the bootstrap
+`CLAUDE.md` does. Art enters the repo only through the import step, recreated or
+imported deliberately — see `unity-import/ImportExtracted.cs`, which rebuilds each
+entity **from its node tree** (hierarchy, local transforms, per-slot materials,
+fracture debris under a disabled root).
 
 ## P2: Plan generation
 Generate the gated task graph from the spec + artifacts:
@@ -67,6 +131,28 @@ The schema and the generation rules are in `references/plan-contract.md`; the ga
 kind per task type is in `references/gate-catalog.md`. Any entry in the plan's
 `gaps` array, or any task with status `needs-human-input`, is surfaced to the user
 before execution — the build never silently fills a hole.
+
+**The two branches produce different spines, not different labels.**
+
+*App*: `design-system` → one `ui` task per nav-graph node → one `api` task per
+endpoint → `logic` → `integration`.
+
+*Game*: nav-graph nodes are `*View` **type names** with no screenshot to diff
+against, and the endpoint list describes a backend a local rebuild stubs — so a
+game plan is not built from them. It is built from what a game actually needs:
+
+| type | source | gate |
+|---|---|---|
+| `engine-settings` | `game-assets/project-settings/`, `physics.json` | build — measured settings applied **before** gameplay code |
+| `art-import` | `asset-guide/ASSET-INDEX.tsv`, grouped by archetype | build — prefabs built **from `entity.json` → `nodes`** (hierarchy, local TRS, per-slot materials, debris under a disabled root) |
+| `mechanic` | the chapter headings of `reconstruction/02-GAMEPLAY-MECHANICS.md` | tdd |
+| `level-pipeline` | schema · editor + image importer · loader with mid-level save | tdd — a board round-trips unchanged |
+| `scene` | the **real canvas dump** `game-assets/ui/*.json`, largest first | visual-diff |
+| `tuning` | the sections of `reconstruction/05-UNKNOWNS.md` | manual — run the experiment or defer explicitly, never invent |
+
+Game `gaps` are judged on game inputs: missing `game-assets/`, `asset-guide/` or
+`reconstruction/`. It does **not** demand `design-tokens.json` (for a Unity title
+that file is SDK noise) or store screenshots.
 
 ## P3: Execution loop
 Execute the plan task-by-task using **superpowers:subagent-driven-development**: a

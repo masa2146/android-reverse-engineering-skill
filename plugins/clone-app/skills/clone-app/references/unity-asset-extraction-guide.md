@@ -144,3 +144,42 @@ it is because it was not extracted, not because it could not be.
 Extracted art is copyrighted. The transferable output is the **structure** —
 level schema, physics constants, entity taxonomy, mechanic-introduction curve,
 architecture map. Treat the art as reference and recreate it in the same style.
+
+## The prefab node tree (`entity.json` → `nodes`)
+
+An entity folder is **not** a bag of OBJs. Each `entity.json` carries `nodes`: the
+object's real hierarchy, one entry per GameObject.
+
+| field | meaning |
+|---|---|
+| `name` | the node's name in the original prefab |
+| `parent` | index into `nodes`; `-1` for the root |
+| `depth` | distance from the root |
+| `localPosition` / `localRotation` / `localScale` | the node's own transform |
+| `mesh` / `mesh_file` | the mesh this node carries, and the OBJ on disk |
+| `materials` | material names **in slot order** — slot order maps to sub-mesh order |
+| `active` | whether the node ships enabled |
+| `fracture` | debris: the node's own name says so, or an ancestor (`Break`/`Crack`/`Debris`/`Shatter`) does |
+
+**Why it exists.** Without it a folder holds the body, the cracked variant and the
+fracture debris side by side with nothing saying which is which — so a rebuild
+picks the largest mesh, throws away the planks and the trim, and then draws the
+missing parts by hand. A multi-plank block (`PixelWoodBlockPlankModel`,
+`BreakWoodPlanks`) cannot be reconstructed from a single merged body at all.
+
+**Rules:**
+- Build the hierarchy from `nodes`, not from `whole_mesh_files`. The flat list is a
+  convenience index, not a recipe.
+- Apply each node's local transform. Parts stacked at the origin are the tell that
+  this was skipped.
+- Assign `materials` **in order** to `sharedMaterials`. One material on a
+  multi-slot renderer paints the whole object.
+- Parent `fracture` nodes under a disabled root; they are the break state, not the
+  intact object.
+- `materials.mtl` in the entity folder carries **every** material of the entity,
+  and each OBJ's `usemtl` names the material of the node that carries it.
+
+`unity-import/ImportExtracted.cs` consumes all of this: it rebuilds the tree,
+applies transforms, creates one Unity material per extracted material with its own
+textures, and puts debris under a disabled `Broken` root. It falls back to the old
+flat build only when `nodes` is absent (an older extraction).
