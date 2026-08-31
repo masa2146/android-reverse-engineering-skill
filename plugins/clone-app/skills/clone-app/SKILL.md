@@ -262,6 +262,72 @@ If the subagent fails, retry once; if it still fails and the **direct-scripts**
 branch is available (i.e. the Phase 2a probe returned `RC == 0`), re-dispatch on
 that branch; otherwise stop and report.
 
+### Phase 2f — Asset usage guide (always, cheap, deterministic)
+
+The extraction tells a builder *what exists*. It does not tell them **where an
+asset is used, what it is for, or which pieces combine into one object** — and an
+AI that cannot resolve "the X in the top-right of a modal" to a concrete file
+will draw its own. That is the most common failure of a rebuild.
+
+Run all three. They are pure functions of the extraction (deterministic,
+CWD-independent, no network, seconds to run):
+
+```bash
+python3 "$CA/gen-asset-guide.py"       "$WORK/extracted" --out "$WORK/extracted/asset-guide" --project-name "<Game>"
+python3 "$CA/gen-ui-map.py"            "$WORK/extracted" --out "$WORK/extracted/asset-guide" --project-name "<Game>"
+python3 "$CA/gen-reference-sources.py" "$WORK"           --out "$WORK/extracted/REFERENCE-SOURCES.md" --project-name "<Game>"
+```
+
+Into `$WORK/extracted/asset-guide/`:
+
+| file | kind | answers |
+|---|---|---|
+| `ASSET-INDEX.tsv` | data (grep) | does X exist · what is it made of · its **node tree counts** and **node→mesh map** · components · aliases (incl. non-English) |
+| `UI-ELEMENT-INDEX.tsv` | data (grep) | where on screen · what size · which canvas · sprite candidates |
+| `UI-ROLE-GUIDE.md` | analysis | **what each recurring UI element is for and where it sits** |
+| `COMPOSITION-RULES.md` | analysis | **§0 the node tree** · multi-mesh objects · multi-group OBJs · multi-slot renderers |
+| `COMPONENT-RECIPES.md` | analysis | archetype → the Unity component stack it actually needs |
+| `ASSET-RULES.md` | protocol | the 5-step resolution protocol + the prohibitions |
+
+plus `$WORK/extracted/REFERENCE-SOURCES.md` — every directory and key file with
+its measured size and **the command that opens it**.
+
+**Rules these encode, all derived from data, never guessed:**
+- **`entity.json` → `nodes` is the rebuild recipe** — parent, local TRS, mesh file,
+  materials in slot order, active, fracture. The flat mesh list is an index.
+- A multi-group OBJ loads as a *fragment* via `LoadAssetAtPath`.
+- Slot order on a multi-slot renderer maps to sub-mesh order.
+- A UI control is often plate + icon + hitbox, not one sprite.
+
+**Honesty contract, enforced in the output:** node names, screen zones (computed
+from RectTransform anchors), sizes, mesh lists, group counts, material slots and
+components are **fact**. Sprite-to-node bindings are **ranked guesses** — the
+canvas dump collapses `Image` to `CanvasRenderer` and loses the binding, so the
+guide says so and tells the reader to open the PNG. Archetype and alias
+assignment are heuristics and are labelled as such. Never let a later phase cite
+a guess as data.
+
+If `game-assets/ui/` is absent the UI generator writes a pointer to the scene
+hierarchy instead of inventing one.
+
+### Phase 2g — Clone-project bootstrap
+
+Write the files the *build* session will need on day one, so it does not have to
+be told them in prose:
+
+```bash
+python3 "$CA/gen-project-bootstrap.py" "$WORK" --out "$WORK/deliverables/bootstrap" --project-name "<CloneName>"
+```
+
+Produces `$WORK/deliverables/bootstrap/`:
+- `CLAUDE.md` — the clone project's root instructions: the asset-resolution
+  protocol, the routing table into `Docs/assets/`, the node-tree rule, the
+  measured engine settings to apply first, and the honesty split.
+- `INSTALL.md` — where each file goes in the new repo.
+
+clone-build's P1 copies this into the scaffolded repo. Nothing here is written by
+hand and nothing needs a human-authored hand-off prompt.
+
 ### Phase 2e — Consume
 
 Read `$WORK/extracted/re-summary.txt` (the only RE text in this context). From it you have:
@@ -448,7 +514,9 @@ Assemble `$WORK/deliverables/clone-build-spec.md`, filling every section from th
 - §3b user-flow diagrams from `$WORK/extracted/logic-digest.md`,
 - §4 from `$WORK/extracted/nav-graph.json`,
 - §5 from `$WORK/extracted/payloads.json` (full Tier-2), §5b + §6 from `$WORK/extracted/backend-recon.md`,
-- §7 asset inventory from `$WORK/extracted/game-assets/` (or `$WORK/raw/decompiled` for non-games),
+- §7 asset inventory from `$WORK/extracted/game-assets/`, and the **asset-usage guide**
+  `$WORK/extracted/asset-guide/` — that guide, not a raw folder listing, is what a
+  builder consults (or `$WORK/raw/decompiled` for non-games),
 - §8 acceptance criteria per screen + flow,
 - §10 absolute paths to every `$WORK/` artifact.
 Use the **Game variant** sections when a game engine was detected, and point §3
@@ -488,12 +556,17 @@ build an exact / near-exact clone without rerunning any of this.
 | Play scrape returns nulls | web-search fallback, note source |
 | Heavy obfuscation | add uncertainty band, note in report |
 | User asks for the plan now | say why it belongs in the build session (free context, repo present, plan can follow the code) and offer it anyway if they insist |
-| Unity build detected | run the content extraction, then the IL2CPP metadata dump (no .NET needed) |
+| Unity build detected | run the content extraction, the IL2CPP metadata dump (no .NET needed), then the Phase 2f asset-usage guide and the Phase 2g bootstrap |
+| `game-assets/ui/` missing | older extraction — re-run `unity-assets.sh`; `gen-ui-map.py` degrades to a pointer, never invents screens |
+| Builder reports "asset not found" | a lookup failure, not a missing asset — point at `asset-guide/ASSET-RULES.md` (5-step protocol) before anything is drawn |
 | `dotnet`/`Il2CppInspector` missing on IL2CPP | **do not ask** — proceed, set `limited:unity-no-il2cpp-types`, note it in the digest and report. Names come from the metadata dump; only resolved types are lost |
 | `ilspycmd` missing on a Mono build | ask — it costs the method bodies, the one thing IL2CPP can never provide |
 | Extraction venv unavailable | ask — without UnityPy the run produces almost nothing. `unity-assets.sh` exits 3 with install guidance; never proceed silently |
 | `unity-assets.sh` exits 4 | extraction ran but produced no manifest — report as a failure, do not treat an empty `game-assets/` as coverage |
 | Entity has no mesh | check `geometry_status` in its `entity.json`: `builtin-primitive` / `procedural` / `external-reference` are findings, not failures |
+| Rebuilt object looks wrong / parts stacked at the origin | the node tree was skipped — `entity.json` → `nodes` carries parent, local TRS, mesh file and per-slot materials; build from it, not from `whole_mesh_files` |
+| Every mesh of an object wears the same material | old extraction. Current `unity-extract.py` writes one `materials.mtl` with every material and a per-node `usemtl`; re-extract |
+| Extraction contains another game's assets | scratch was shared. `unity-extract.py` now names the fallback scratch after its output dir and stamps it with the source package, wiping on mismatch — if you see foreign entity names, delete the scratch and re-extract |
 | Non-game package | skip Phase 5 (reconstruction needs a game engine's extracted content); everything else runs unchanged |
 | Phase 5 subagent fails | retry once, then keep the partial `reconstruction/` and name the missing documents |
 | `api-surface.json` missing | Phase 5 still runs from assets alone, but mechanics drop to `[D]`-only; say so in the reconstruction README |

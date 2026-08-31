@@ -43,7 +43,9 @@ TEXTURE_FORMATS = {
 }
 
 # A mesh whose name matches this is a fracture/debris piece, not the whole object.
-BROKEN_RE = re.compile(r"broken|_piece|_geo_\d+$|_shard", re.I)
+BROKEN_RE = re.compile(r"broken|_piece|_geo_\d+$|_shard|_cell(\.\d+)*$", re.I)
+# A node is debris when an ancestor says so — structural, not a name guess.
+FRACTURE_PARENT_RE = re.compile(r"break|broken|crack|debris|shatter|destruct", re.I)
 
 # Gameplay nouns worth grouping even when the level data never names them —
 # remote/CDN levels routinely hide Magnet/Portal/WreckingBall/Rope from the
@@ -1484,7 +1486,7 @@ class EntityBuilder:
                "textures": {}, "colliders": [], "joints": [], "rigidbody": None,
                "animator": None, "particles": [], "particle_owners": [], "sprites": [],
                "scripts": set(), "children": [], "external_meshes": [], "transform": None,
-               "renderers": []}
+               "renderers": [], "nodes": []}
         tr = _transform_of(root)
         if tr is not None:
             agg["transform"] = {
@@ -1502,6 +1504,7 @@ class EntityBuilder:
                     stack.append((ch, depth + 1))
         agg["scripts"] = sorted(agg["scripts"])
         agg["children"] = sorted(set(agg["children"]))
+        agg["nodes"] = self._node_tree(root)
         # child GameObjects own their own ParticleSystems; pull every one in the
         # subtree, not just a system sitting on the root
         for owner in dict.fromkeys([root.m_Name] + agg["particle_owners"]):
@@ -1510,6 +1513,62 @@ class EntityBuilder:
                 if name not in agg["particles"]:
                     agg["particles"].append(name)
         return agg
+
+    def _node_tree(self, root, max_nodes=400, max_depth=6):
+        """The prefab's real hierarchy: one entry per GameObject, with its parent,
+        its local transform, the mesh it carries and its materials IN SLOT ORDER.
+
+        Without this an entity folder is a pile of OBJs with no statement of which
+        one is the body, which is a plank and which is debris — and a rebuild
+        guesses, or draws its own."""
+        nodes, queue = [], [(root, -1, 0)]
+        while queue and len(nodes) < max_nodes:
+            go, parent, depth = queue.pop(0)
+            idx = len(nodes)
+            n = {"name": go.m_Name, "parent": parent, "depth": depth,
+                 "active": bool(getattr(go, "m_IsActive", True)),
+                 "components": [], "mesh": None, "materials": [],
+                 "sprite": None, "particle": False}
+            tr = _transform_of(go)
+            if tr is not None:
+                n["localPosition"] = _vec(getattr(tr, "m_LocalPosition", None), ("x", "y", "z"))
+                n["localRotation"] = _vec(getattr(tr, "m_LocalRotation", None))
+                n["localScale"] = _vec(getattr(tr, "m_LocalScale", None), ("x", "y", "z"))
+            for c in _components(go):
+                tn = type(c).__name__
+                n["components"].append(tn)
+                if tn in ("MeshFilter", "SkinnedMeshRenderer"):
+                    mname, kind = _mesh_ref(c, self.x.externals_of)
+                    if mname and not kind:
+                        n["mesh"] = mname
+                    elif kind:
+                        n["mesh"] = f"<{kind}>"
+                if tn in ("MeshRenderer", "SkinnedMeshRenderer", "SpriteRenderer",
+                          "ParticleSystemRenderer"):
+                    for mp in (getattr(c, "m_Materials", None) or []):
+                        m = _deref(mp)
+                        n["materials"].append(m.m_Name if m is not None and m.m_Name else None)
+                if tn == "SpriteRenderer":
+                    sp = _deref(getattr(c, "m_Sprite", None))
+                    if sp is not None and sp.m_Name:
+                        n["sprite"] = sp.m_Name
+                if tn == "ParticleSystem":
+                    n["particle"] = True
+            nodes.append(n)
+            if depth < max_depth:
+                for ch in _children(go):
+                    queue.append((ch, idx, depth + 1))
+        # debris: own name says so, or an ancestor does
+        for i, n in enumerate(nodes):
+            anc, cur = [], n["parent"]
+            while cur >= 0:
+                anc.append(nodes[cur]["name"])
+                cur = nodes[cur]["parent"]
+            n["fracture"] = bool(
+                (n["mesh"] and classify_mesh(n["mesh"]) == "broken")
+                or FRACTURE_PARENT_RE.search(n["name"] or "")
+                or any(FRACTURE_PARENT_RE.search(a or "") for a in anc))
+        return nodes
 
     def _collect(self, go, agg):
         for c in _components(go):
@@ -1715,18 +1774,37 @@ def write_entity_folders(x, entities, level_analysis, particles_by_go):
                 copied_tex[slot] = os.path.join("textures", os.path.basename(dst))
         primary_mat = next(iter(agg["materials"].items()), (None, {}))
         mat_name, mat_data = primary_mat
+        # ONE .mtl carrying EVERY material of the entity. Writing only the first
+        # one painted every mesh with the wrong surface.
         mtl_file = None
-        if mat_name:
-            mtl_file = safe_name(mat_name, "material") + ".mtl"
+        if agg["materials"]:
+            mtl_file = "materials.mtl"
             with open(os.path.join(d, mtl_file), "w") as f:
-                f.write(mtl_text(mat_name, copied_tex,
-                                 mat_data.get("colors"), mat_data.get("floats")))
-        whole_files = _copy_meshes(x, agg["meshes"], d, mtl_file, mat_name)
+                for mn, md in agg["materials"].items():
+                    tex = {}
+                    for k, v in (md.get("texture_slots") or {}).items():
+                        base = os.path.basename(str(v))
+                        cand = base if base.lower().endswith(".png") else base + ".png"
+                        if os.path.exists(os.path.join(td, cand)):
+                            tex[k] = os.path.join("textures", cand)
+                    f.write(mtl_text(mn, tex or copied_tex,
+                                     md.get("colors"), md.get("floats")))
+                    f.write("\n")
+        # each mesh gets the material of the node that actually carries it
+        mesh_mat = {}
+        for n in agg.get("nodes") or []:
+            if n.get("mesh") and n.get("materials"):
+                mesh_mat.setdefault(n["mesh"], n["materials"][0])
+        whole_files = _copy_meshes(x, agg["meshes"], d, mtl_file, mat_name, mesh_mat)
         broken_files = []
         if agg["broken_pieces"]:
             bd = os.path.join(d, "broken")
             os.makedirs(bd, exist_ok=True)
-            broken_files = _copy_meshes(x, agg["broken_pieces"], bd, None, None)
+            # debris gets its material as well; the .mtl sits one level up
+            broken_files = _copy_meshes(
+                x, agg["broken_pieces"], bd,
+                os.path.join("..", mtl_file) if mtl_file else None,
+                mat_name, mesh_mat)
         anim_files = _copy_animations(x, agg, d)
         part_files = _copy_particles(x, agg, d)
         info = {
@@ -1752,6 +1830,7 @@ def write_entity_folders(x, entities, level_analysis, particles_by_go):
             "renderers": sorted(set(agg["renderers"])),
             "scripts": agg["scripts"],
             "children": agg["children"],
+            "nodes": _resolve_node_files(agg.get("nodes") or [], x),
             "geometry_status": _geometry_status(agg),
         }
         with open(os.path.join(d, "entity.json"), "w") as f:
@@ -1772,18 +1851,34 @@ def _link_or_copy(src, dst):
         shutil.copy2(src, dst)
 
 
-def _copy_meshes(x, mesh_names, dest, mtl_file, mat_name):
+def _resolve_node_files(nodes, x):
+    """Attach the on-disk OBJ filename to each node that carries a mesh, so the
+    tree is directly actionable: node -> file -> material slot."""
+    for n in nodes:
+        m = n.get("mesh")
+        if not m or m.startswith("<"):
+            continue
+        src = x.mesh_files.get(m)
+        n["mesh_file"] = os.path.basename(src) if src else None
+    return nodes
+
+
+def _copy_meshes(x, mesh_names, dest, mtl_file, mat_name, mesh_mat=None):
+    """`mesh_mat` maps mesh name -> the material of the node that carries it, so
+    each OBJ gets its own `usemtl` instead of the entity's first material."""
+    mesh_mat = mesh_mat or {}
     out = []
     for m in mesh_names:
         src = x.mesh_files.get(m)
         if not src or not os.path.exists(src):
             continue
         dst = os.path.join(dest, os.path.basename(src))
-        if mtl_file and mat_name:
+        use = mesh_mat.get(m) or mat_name
+        if mtl_file and use:
             with open(src) as f:
                 body = f.read()
             with open(dst, "w") as f:
-                f.write(attach_material_to_obj(body, mtl_file, mat_name))
+                f.write(attach_material_to_obj(body, mtl_file, use))
         elif not os.path.exists(dst):
             _link_or_copy(src, dst)
         out.append(os.path.basename(dst))
@@ -1905,6 +2000,20 @@ def _entity_readme(info):
         lines += ["Scripts on this object (names only — MonoBehaviour field values are "
                   "stripped in an IL2CPP build): "
                   + ", ".join(f"`{s}`" for s in info["scripts"][:20]), ""]
+    nodes = info.get("nodes") or []
+    if nodes:
+        meshed = [n for n in nodes if n.get("mesh_file")]
+        frac = [n for n in nodes if n.get("fracture")]
+        lines += ["", f"**Node tree: {len(nodes)} nodes**, {len(meshed)} of them carrying a mesh"
+                  + (f", {len(frac)} fracture debris" if frac else "") + ".",
+                  "",
+                  "`entity.json` → `nodes` is the rebuild recipe: each entry has `parent`, "
+                  "`localPosition/Rotation/Scale`, `mesh_file`, `materials` (**slot order**), "
+                  "`active` and `fracture`. Build the hierarchy from it — the flat "
+                  "`whole_mesh_files` list cannot tell the body from the debris.", ""]
+        top = [n for n in nodes if n.get("depth") == 1][:12]
+        if top:
+            lines += ["Direct children: " + ", ".join(f"`{n['name']}`" for n in top), ""]
     lines += ["Files: `entity.json` is the machine-readable rebuild recipe; "
               "`unity-import/ImportExtracted.cs` consumes it.", ""]
     return "\n".join(lines)
@@ -1928,7 +2037,12 @@ def write_import_md(x, out, formats, entities, fonts, level_analysis):
         "constants, entity taxonomy, architecture), not the copyrighted art.", "",
         "## What is directly usable", "",
         "| Asset | State |", "|---|---|",
-        f"| Meshes (`.obj` + `.mtl`) | geometry intact; **no prefab Transform applied** — "
+        f"| Prefab node tree (`entity.json` → `nodes`) | **the object's real hierarchy**: "
+        "per node its parent, local position/rotation/scale, the mesh file it carries, its "
+        "materials **in slot order**, whether it is active, and whether it is fracture debris. "
+        "Rebuild from this, not from the flat mesh list — a folder of OBJs cannot say which "
+        "one is the body, which is a plank and which is debris. |\n"
+        f"| Meshes (`.obj` + `.mtl`) | geometry intact; the node tree carries the Transform — "
         "check `entity.json.transform.localScale`, some models are authored in centimetres |",
         f"| Textures | **{lossless} lossless** (RGBA32/RGB24/Alpha8) · "
         f"**{len(lossy)} decoded from compressed** (ASTC/ETC/DXT) — re-compressing those "
@@ -2072,12 +2186,43 @@ def default_scratch_dir(out_dir):
 
     A standard workdir is <pkg>/{deliverables,extracted,raw}; extraction writes
     to <pkg>/extracted/game-assets, so scratch belongs at <pkg>/raw/unity-work.
-    Outside that shape, fall back to a sibling of the output dir.
+    Outside that shape, fall back to a sibling of the output dir **named after
+    that output dir** — a bare `unity-work` sibling is shared by every extraction
+    writing next to it, and two packages then silently merge into one dump.
     """
-    parent = os.path.dirname(os.path.abspath(out_dir))
+    out_dir = os.path.abspath(out_dir)
+    parent = os.path.dirname(out_dir)
     if os.path.basename(parent) == "extracted":
         return os.path.join(os.path.dirname(parent), "raw", "unity-work")
-    return os.path.join(parent, "unity-work")
+    return os.path.join(parent, os.path.basename(out_dir) + ".unity-work")
+
+
+def guard_scratch(scratch, pkg_path):
+    """Scratch is reused across runs to save an unpack. Reuse is only safe when
+    it was filled from the SAME package — otherwise the merge step silently mixes
+    two games. Stamp it, and wipe on mismatch."""
+    stamp = os.path.join(scratch, ".source")
+    try:
+        sig = f"{os.path.abspath(pkg_path)}\n{os.path.getsize(pkg_path)}\n"
+    except OSError:
+        sig = os.path.abspath(pkg_path) + "\n"
+    if os.path.isdir(scratch):
+        old = ""
+        if os.path.exists(stamp):
+            try:
+                old = open(stamp).read()
+            except OSError:
+                old = ""
+        if old != sig:
+            if old:
+                print(f"       scratch was filled from a different package - wiping {scratch}")
+            else:
+                print(f"       scratch has no source stamp - wiping {scratch}")
+            shutil.rmtree(scratch, ignore_errors=True)
+    os.makedirs(scratch, exist_ok=True)
+    with open(stamp, "w") as f:
+        f.write(sig)
+    return scratch
 
 
 def count_package_entries(pkg_path):
@@ -2126,7 +2271,8 @@ def main(argv=None):
     verbose = not args.quiet
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
-    work = os.path.abspath(args.work or default_scratch_dir(out))
+    work = guard_scratch(os.path.abspath(args.work or default_scratch_dir(out)),
+                         args.package)
     os.makedirs(work, exist_ok=True)
 
     def log(m):

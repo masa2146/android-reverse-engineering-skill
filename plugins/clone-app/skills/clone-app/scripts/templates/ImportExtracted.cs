@@ -176,16 +176,10 @@ public class ImportExtracted : EditorWindow
         var go = new GameObject(info.entity);
         try
         {
-            foreach (var meshFile in info.wholeMeshFiles)
-            {
-                var assetPath = Path.Combine(targetDir, "Meshes", meshFile).Replace("\\", "/");
-                var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
-                if (mesh == null) continue;
-                var child = new GameObject(Path.GetFileNameWithoutExtension(meshFile));
-                child.transform.SetParent(go.transform, false);
-                child.AddComponent<MeshFilter>().sharedMesh = mesh;
-                child.AddComponent<MeshRenderer>().sharedMaterial = ResolveMaterial(info, folder);
-            }
+            if (info.nodes.Count > 0)
+                BuildFromNodes(info, go);
+            else
+                BuildFlat(info, go, folder);
 
             foreach (var c in info.colliders)
             {
@@ -257,6 +251,113 @@ public class ImportExtracted : EditorWindow
         }
     }
 
+    /// <summary>Rebuild the prefab's real hierarchy: one GameObject per extracted
+    /// node, with its local transform, the mesh it actually carries and its
+    /// materials in slot order. Fracture debris is parented under a disabled
+    /// "Broken" root so the intact object is what you see.</summary>
+    private void BuildFromNodes(EntityInfo info, GameObject root)
+    {
+        var made = new GameObject[info.nodes.Count];
+        GameObject brokenRoot = null;
+
+        for (int i = 0; i < info.nodes.Count; i++)
+        {
+            var n = info.nodes[i];
+            GameObject g;
+            if (i == 0) { g = root; }
+            else
+            {
+                g = new GameObject(string.IsNullOrEmpty(n.name) ? "node" : n.name);
+                var parent = (n.parent >= 0 && n.parent < made.Length && made[n.parent] != null)
+                    ? made[n.parent].transform : root.transform;
+                if (n.fracture)
+                {
+                    if (brokenRoot == null)
+                    {
+                        brokenRoot = new GameObject("Broken");
+                        brokenRoot.transform.SetParent(root.transform, false);
+                        brokenRoot.SetActive(false);
+                    }
+                    parent = brokenRoot.transform;
+                }
+                g.transform.SetParent(parent, false);
+            }
+            made[i] = g;
+
+            if (n.localPosition != null) g.transform.localPosition = n.localPosition.Value;
+            if (n.localRotation != null) g.transform.localRotation = n.localRotation.Value;
+            if (n.localScale != null) g.transform.localScale = n.localScale.Value;
+            if (i != 0 && !n.active) g.SetActive(false);
+
+            if (!string.IsNullOrEmpty(n.meshFile))
+            {
+                var mp = Path.Combine(targetDir, "Meshes", n.meshFile).Replace("\\", "/");
+                var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(mp);
+                if (mesh != null)
+                {
+                    g.AddComponent<MeshFilter>().sharedMesh = mesh;
+                    var mr = g.AddComponent<MeshRenderer>();
+                    // slot order matters: it maps to sub-mesh order
+                    var mats = new List<Material>();
+                    foreach (var mn in n.materials) mats.Add(ResolveNamedMaterial(info, mn));
+                    if (mats.Count == 0) mats.Add(ResolveMaterial(info, null));
+                    mr.sharedMaterials = mats.ToArray();
+                }
+            }
+        }
+    }
+
+    private void BuildFlat(EntityInfo info, GameObject go, string folder)
+    {
+        foreach (var meshFile in info.wholeMeshFiles)
+        {
+            var assetPath = Path.Combine(targetDir, "Meshes", meshFile).Replace("\\", "/");
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
+            if (mesh == null) continue;
+            var child = new GameObject(Path.GetFileNameWithoutExtension(meshFile));
+            child.transform.SetParent(go.transform, false);
+            child.AddComponent<MeshFilter>().sharedMesh = mesh;
+            child.AddComponent<MeshRenderer>().sharedMaterial = ResolveMaterial(info, folder);
+        }
+    }
+
+    /// <summary>Create (or fetch) one Unity material per extracted material, with
+    /// ITS OWN textures — not the entity's first material applied to everything.</summary>
+    private Material ResolveNamedMaterial(EntityInfo info, string matName)
+    {
+        if (string.IsNullOrEmpty(matName)) return ResolveMaterial(info, null);
+        var path = Path.Combine(targetDir, "Materials", SafeName(matName) + ".mat").Replace("\\", "/");
+        var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (existing != null) return existing;
+
+        var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var mat = new Material(shader) { name = matName };
+
+        MaterialInfo mi;
+        if (info.materials.TryGetValue(matName, out mi))
+        {
+            foreach (var kv in mi.textureSlots)
+            {
+                var texPath = Path.Combine(targetDir, "Textures",
+                    Path.GetFileName(kv.Value)).Replace("\\", "/");
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+                if (tex == null) continue;
+                if (mat.HasProperty(kv.Key)) mat.SetTexture(kv.Key, tex);
+                else if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
+            }
+            foreach (var kv in mi.colors) if (mat.HasProperty(kv.Key)) mat.SetColor(kv.Key, kv.Value);
+            foreach (var kv in mi.floats) if (mat.HasProperty(kv.Key)) mat.SetFloat(kv.Key, kv.Value);
+        }
+        AssetDatabase.CreateAsset(mat, path);
+        return mat;
+    }
+
+    private static string SafeName(string s)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
+        return s;
+    }
+
     private Material ResolveMaterial(EntityInfo info, string folder)
     {
         if (string.IsNullOrEmpty(info.primaryMaterial)) return null;
@@ -296,6 +397,23 @@ public class ImportExtracted : EditorWindow
 
     private class JointInfo { public string type, connectedBody; }
 
+    private class NodeInfo
+    {
+        public string name, meshFile;
+        public int parent = -1;
+        public bool active = true, fracture;
+        public Vector3? localPosition, localScale;
+        public Quaternion? localRotation;
+        public List<string> materials = new List<string>();
+    }
+
+    private class MaterialInfo
+    {
+        public Dictionary<string, string> textureSlots = new Dictionary<string, string>();
+        public Dictionary<string, Color> colors = new Dictionary<string, Color>();
+        public Dictionary<string, float> floats = new Dictionary<string, float>();
+    }
+
     private class RigidbodyInfo
     {
         public float? mass, drag, angularDrag;
@@ -310,6 +428,8 @@ public class ImportExtracted : EditorWindow
         public List<ColliderInfo> colliders = new List<ColliderInfo>();
         public List<JointInfo> joints = new List<JointInfo>();
         public RigidbodyInfo rigidbody;
+        public List<NodeInfo> nodes = new List<NodeInfo>();
+        public Dictionary<string, MaterialInfo> materials = new Dictionary<string, MaterialInfo>();
         public Dictionary<string, string> primaryTextureSlots = new Dictionary<string, string>();
         public Dictionary<string, Color> primaryColors = new Dictionary<string, Color>();
         public Dictionary<string, float> primaryFloats = new Dictionary<string, float>();
@@ -364,6 +484,24 @@ public class ImportExtracted : EditorWindow
             }
             if (node.TryGetValue("materials", out var mo) && mo is Dictionary<string, object> mats)
             {
+                // every material, each with its OWN textures — assigning the first
+                // material to every mesh is what made extracted objects look wrong
+                foreach (var kv in mats)
+                {
+                    if (!(kv.Value is Dictionary<string, object> mdd)) continue;
+                    var mi = new MaterialInfo();
+                    if (mdd.TryGetValue("texture_slots", out var mts) && mts is Dictionary<string, object> tss)
+                        foreach (var t in tss) mi.textureSlots[t.Key] = Convert.ToString(t.Value);
+                    if (mdd.TryGetValue("colors", out var mcs) && mcs is Dictionary<string, object> cls)
+                        foreach (var c in cls)
+                        {
+                            var v = MiniJson.Floats(c.Value);
+                            if (v.Count >= 4) mi.colors[c.Key] = new Color(v[0], v[1], v[2], v[3]);
+                        }
+                    if (mdd.TryGetValue("floats", out var mfs) && mfs is Dictionary<string, object> fss)
+                        foreach (var f in fss) mi.floats[f.Key] = Convert.ToSingle(f.Value);
+                    e.materials[kv.Key] = mi;
+                }
                 foreach (var kv in mats)
                 {
                     e.primaryMaterial = kv.Key;
@@ -383,6 +521,25 @@ public class ImportExtracted : EditorWindow
             if (node.TryGetValue("texture_slots", out var to) && to is Dictionary<string, object> slots)
                 foreach (var kv in slots)
                     e.primaryTextureSlots[kv.Key] = Convert.ToString(kv.Value);
+            foreach (var nd in MiniJson.Arr(node, "nodes"))
+            {
+                if (!(nd is Dictionary<string, object> n)) continue;
+                var ni = new NodeInfo
+                {
+                    name = MiniJson.Str(n, "name"),
+                    meshFile = MiniJson.Str(n, "mesh_file"),
+                    parent = n.TryGetValue("parent", out var pv) ? Convert.ToInt32(pv) : -1,
+                    active = !n.TryGetValue("active", out var av) || Convert.ToBoolean(av),
+                    fracture = n.TryGetValue("fracture", out var fv) && Convert.ToBoolean(fv),
+                    localPosition = MiniJson.Vec(n, "localPosition"),
+                    localScale = MiniJson.Vec(n, "localScale"),
+                };
+                var q = MiniJson.Floats(n.TryGetValue("localRotation", out var rv) ? rv : null);
+                if (q.Count >= 4) ni.localRotation = new Quaternion(q[0], q[1], q[2], q[3]);
+                foreach (var m in MiniJson.Arr(n, "materials"))
+                    ni.materials.Add(Convert.ToString(m));
+                e.nodes.Add(ni);
+            }
             return e;
         }
     }
